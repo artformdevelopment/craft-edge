@@ -1,0 +1,22 @@
+{% extends '_layout.twig' %}
+{% set title = 'Blog' %}
+
+{% block content %}
+    <h1>Blog</h1>
+    <p>
+        This listing recorded a cache tag for "entries in the blog section" when it was
+        rendered. Publish a new post in the control panel and the queue purges this page
+        within seconds, so the new post shows up. (Listings that miss brand-new entries
+        are the classic full-page-cache bug; the query-tag map is what prevents it here.)
+    </p>
+    <ul class="post-list">
+        {% for entry in craft.entries.section('blog').orderBy('postDate desc').all() %}
+            <li>
+                <a href="{{ entry.url }}">{{ entry.title }}</a>
+                <time datetime="{{ entry.postDate|date('Y-m-d') }}">{{ entry.postDate|date('M j, Y') }}</time>
+            </li>
+        {% else %}
+            <li><span class="muted">No posts yet.</span></li>
+        {% endfor %}
+    </ul>
+{% endblock %}

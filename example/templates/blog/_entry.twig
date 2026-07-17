@@ -1,0 +1,16 @@
+{% extends '_layout.twig' %}
+{% set title = entry.title %}
+
+{% block content %}
+    <article class="post">
+        <h1>{{ entry.title }}</h1>
+        {# Absolute dates are cache-safe; relative "3 minutes ago" times are not. #}
+        <p><time class="muted" datetime="{{ entry.postDate|date('Y-m-d') }}">{{ entry.postDate|date('F j, Y') }}</time></p>
+        <p>
+            This entry page is cached as a static file. Edit or delete the entry in the
+            control panel and Edge's queue job purges exactly this URL, plus every listing
+            that includes it, then re-warms them so the next visitor still gets a hit.
+        </p>
+    </article>
+    <p><a href="/blog">← All posts</a></p>
+{% endblock %}

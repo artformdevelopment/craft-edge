@@ -1,0 +1,204 @@
+/* Edge example site. Light, typography-led; the cached shell is calm ink-on-white,
+   anything live/per-visitor is marked with the teal primary. */
+
+:root {
+    --bg: oklch(1 0 0);
+    --surface: oklch(0.965 0.006 180);
+    --ink: oklch(0.24 0.02 190);
+    --muted: oklch(0.45 0.015 190);
+    --primary: oklch(0.55 0.095 180);
+    --primary-ink: oklch(0.38 0.085 180);
+    --accent: oklch(0.62 0.13 50);
+    --hairline: oklch(0.88 0.01 180);
+    --radius: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Bricolage Grotesque", system-ui, sans-serif;
+    font-size: 1.0625rem;
+    line-height: 1.6;
+}
+
+.mono {
+    font-family: "Fragment Mono", ui-monospace, monospace;
+    font-size: 0.8125rem;
+}
+
+a { color: var(--primary-ink); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--ink); }
+
+h1, h2, h3 { line-height: 1.15; text-wrap: balance; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; margin: 0 0 1rem; }
+h2 { font-size: 1.45rem; font-weight: 600; margin: 3rem 0 0.75rem; }
+
+p { max-width: 68ch; text-wrap: pretty; }
+small, .muted { color: var(--muted); }
+
+/* Shell chrome */
+
+.site-header {
+    display: flex;
+    align-items: baseline;
+    gap: 2rem;
+    padding: 1.1rem clamp(1rem, 4vw, 3rem);
+    border-bottom: 1px solid var(--hairline);
+}
+
+.site-header .wordmark {
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+    color: var(--ink);
+}
+
+.site-header nav { display: flex; gap: 1.25rem; }
+.site-header nav a { text-decoration: none; color: var(--muted); font-weight: 500; }
+.site-header nav a:hover { color: var(--ink); }
+.site-header .account { margin-left: auto; }
+
+main {
+    max-width: 44rem;
+    margin: 0 auto;
+    padding: clamp(2rem, 6vw, 4rem) 1.25rem 4rem;
+}
+
+/* Live regions (islands). The label is part of the accessibility story:
+   live content is announced, not just tinted. */
+
+.live-region {
+    position: relative;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 1rem 1.1rem 0.9rem;
+    margin: 1.25rem 0;
+}
+
+.live-region::before {
+    content: "live · per-visitor";
+    display: block;
+    font-family: "Fragment Mono", ui-monospace, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.02em;
+    color: var(--primary-ink);
+    margin-bottom: 0.45rem;
+}
+
+.live-region [data-edge-island] { display: block; }
+
+.live-region [data-edge-hydrated] {
+    animation: island-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes island-in {
+    from { opacity: 0.35; }
+    to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .live-region [data-edge-hydrated] { animation: none; }
+}
+
+/* Header account island stays inline and quiet */
+.account [data-edge-island] { color: var(--muted); font-size: 0.9rem; }
+.account form { display: inline; }
+.account button {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: var(--primary-ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+/* Posts */
+
+.post-list { list-style: none; margin: 0; padding: 0; }
+.post-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 0.85rem 0;
+    border-bottom: 1px solid var(--hairline);
+}
+.post-list a { font-weight: 600; text-decoration: none; }
+.post-list a:hover { text-decoration: underline; }
+.post-list time { color: var(--muted); white-space: nowrap; }
+
+article.post h1 { margin-bottom: 0.25rem; }
+
+/* Forms */
+
+form.sign-in {
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 1.4rem;
+    max-width: 24rem;
+    display: grid;
+    gap: 0.9rem;
+    margin: 1.25rem 0;
+}
+
+form.sign-in label { display: grid; gap: 0.3rem; font-weight: 500; font-size: 0.95rem; }
+
+form.sign-in input {
+    font: inherit;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--hairline);
+    border-radius: 4px;
+    background: var(--bg);
+    color: var(--ink);
+}
+
+form.sign-in input:focus-visible,
+.account button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+}
+
+form.sign-in button {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.55rem 1rem;
+    background: var(--primary-ink);
+    color: var(--bg);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    justify-self: start;
+}
+
+form.sign-in button:hover { background: var(--ink); }
+
+/* Telemetry footer: the frozen-vs-live comparison, styled as an instrument readout */
+
+.telemetry {
+    border-top: 1px solid var(--hairline);
+    margin-top: 4rem;
+    padding: 1.5rem clamp(1rem, 4vw, 3rem) 2.5rem;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.telemetry .row {
+    font-family: "Fragment Mono", ui-monospace, monospace;
+    font-size: 0.8125rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.telemetry .k { color: var(--muted); min-width: 14ch; }
+.telemetry .frozen { color: var(--ink); }
+.telemetry .live { color: var(--primary-ink); }
+.telemetry .note { color: var(--muted); font-family: "Bricolage Grotesque", system-ui, sans-serif; font-size: 0.85rem; max-width: 60ch; margin-top: 0.6rem; }

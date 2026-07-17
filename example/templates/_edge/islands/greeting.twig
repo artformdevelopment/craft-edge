@@ -1,0 +1,9 @@
+{# Rendered live per visitor — currentUser is real here (docs/templating.md). #}
+{% if currentUser %}
+    Signed in as <strong>{{ currentUser.friendlyName }}</strong>. The page around this box
+    is still the shared cached file every visitor gets; only this island (and the account
+    menu) was rendered live, for you, after load.
+{% else %}
+    You're browsing anonymously. The page around this box is a shared cached file,
+    but this sentence was rendered live for your request.
+{% endif %}

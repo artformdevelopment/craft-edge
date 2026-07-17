@@ -1,0 +1,6 @@
+{# Session state is per-visitor and allowed inside an island. Two browsers each get
+   their own independent count; sessions never leak between visitors. #}
+{% set visits = craft.app.session.get('edgeExample:visits', 0) + 1 %}
+{% do craft.app.session.set('edgeExample:visits', visits) %}
+This island has loaded <strong>{{ visits }}</strong> time{{ visits == 1 ? '' : 's' }} in your
+session. Open the page in a second browser and its count starts at 1.

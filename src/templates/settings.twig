@@ -1,0 +1,276 @@
+{% import '_includes/forms' as forms %}
+
+{% macro configWarning(key, overrides) %}
+    {% if key in overrides %}
+        {# One wrapping span, one flex item: .has-icon lays the <p> out as flex, which
+           drops whitespace-only text nodes between flex items (icon/chip/words). #}
+        <p class="warning has-icon" data-config-warning="{{ key }}">
+            <span><span data-icon="alert" aria-hidden="true"></span>
+            This setting is overridden by <code>config/edge.php</code> and can only be changed there.</span>
+        </p>
+    {% endif %}
+{% endmacro %}
+
+{% macro patternTable(name, label, instructions, values, overrides) %}
+    {{ _self.listTable(name, label, instructions, values, overrides, 'Pattern') }}
+{% endmacro %}
+
+{% macro listTable(name, label, instructions, values, overrides, heading) %}
+    {% import '_includes/forms' as forms %}
+    {{ forms.editableTableField({
+        label: label,
+        instructions: instructions,
+        id: name,
+        name: name,
+        cols: { 0: { heading: heading, type: 'singleline' } },
+        rows: values|map(v => [v]),
+        allowAdd: true,
+        allowDelete: true,
+        allowReorder: true,
+        addRowLabel: 'Add a row',
+        static: name in overrides,
+    }) }}
+    {{ _self.configWarning(name, overrides) }}
+{% endmacro %}
+
+<h2>General</h2>
+
+{{ forms.lightswitchField({
+    label: 'Enable Edge Caching',
+    instructions: 'Master switch. When off, no pages are cached or served from the edge and all responses are dynamic.',
+    id: 'enabled',
+    name: 'enabled',
+    on: settings.enabled,
+    disabled: 'enabled' in overrides,
+}) }}
+{{ _self.configWarning('enabled', overrides) }}
+
+{{ forms.selectField({
+    label: 'Edge Driver',
+    instructions: 'The **one** managed edge tier. Whichever tier is not managed must be configured pass-through, see the per-driver docs.',
+    id: 'driver',
+    name: 'driver',
+    value: settings.driver,
+    options: [
+        { value: 'nginx-static', label: 'nginx: static HTML files (try_files)' },
+        { value: 'nginx-fastcgi', label: 'nginx: fastcgi_cache + ngx_cache_purge' },
+        { value: 'cloudflare', label: 'Cloudflare: cache rules + purge API' },
+    ],
+    toggle: true,
+    targetPrefix: 'driver-',
+    disabled: 'driver' in overrides,
+}) }}
+{{ _self.configWarning('driver', overrides) }}
+
+<div id="driver-nginx-static" class="{{ settings.driver != 'nginx-static' ? 'hidden' }}">
+    {{ forms.autosuggestField({
+        label: 'Cache Path',
+        instructions: 'Where rendered HTML files are written. Outside the web root, served through the internal `@edge` location; must match the cache root in your nginx config (see `docs/nginx-static.conf`). Supports aliases and env vars.',
+        id: 'cachePath',
+        name: 'cachePath',
+        value: settings.cachePath,
+        suggestAliases: true,
+        suggestEnvVars: true,
+        placeholder: '@storage/edge-cache',
+        disabled: 'cachePath' in overrides,
+    }) }}
+    {{ _self.configWarning('cachePath', overrides) }}
+</div>
+
+<div id="driver-nginx-fastcgi" class="{{ settings.driver != 'nginx-fastcgi' ? 'hidden' }}">
+    {{ forms.autosuggestField({
+        label: 'FastCGI Purge URL',
+        instructions: 'Base URL of the `ngx_cache_purge` location (requires the module, see `docs/nginx-fastcgi.conf`). The URI to purge is appended. Supports env vars.',
+        id: 'fastCgiPurgeUrl',
+        name: 'fastCgiPurgeUrl',
+        value: settings.fastCgiPurgeUrl,
+        suggestEnvVars: true,
+        placeholder: 'http://127.0.0.1/edge-purge',
+        disabled: 'fastCgiPurgeUrl' in overrides,
+    }) }}
+    {{ _self.configWarning('fastCgiPurgeUrl', overrides) }}
+</div>
+
+<div id="driver-cloudflare" class="{{ settings.driver != 'cloudflare' ? 'hidden' }}">
+    {{ forms.autosuggestField({
+        label: 'Cloudflare API Token',
+        instructions: 'Use an env var reference (e.g. `$CLOUDFLARE_API_TOKEN`); never store the raw secret in project config.',
+        id: 'cloudflareApiToken',
+        name: 'cloudflareApiToken',
+        value: settings.cloudflareApiToken,
+        suggestEnvVars: true,
+        placeholder: '$CLOUDFLARE_API_TOKEN',
+        disabled: 'cloudflareApiToken' in overrides,
+    }) }}
+    {{ _self.configWarning('cloudflareApiToken', overrides) }}
+
+    {{ forms.autosuggestField({
+        label: 'Cloudflare Zone ID',
+        instructions: 'The zone that serves this site. Supports env vars (e.g. `$CLOUDFLARE_ZONE_ID`).',
+        id: 'cloudflareZoneId',
+        name: 'cloudflareZoneId',
+        value: settings.cloudflareZoneId,
+        suggestEnvVars: true,
+        placeholder: '$CLOUDFLARE_ZONE_ID',
+        disabled: 'cloudflareZoneId' in overrides,
+    }) }}
+    {{ _self.configWarning('cloudflareZoneId', overrides) }}
+
+    {{ forms.lightswitchField({
+        label: 'Purge by Cache-Tag (Enterprise)',
+        instructions: 'Emit `Cache-Tag` headers and purge by tag instead of by URL. Cloudflare Enterprise plans only.',
+        id: 'cloudflareUsesCacheTags',
+        name: 'cloudflareUsesCacheTags',
+        on: settings.cloudflareUsesCacheTags,
+        disabled: 'cloudflareUsesCacheTags' in overrides,
+    }) }}
+    {{ _self.configWarning('cloudflareUsesCacheTags', overrides) }}
+</div>
+
+<hr>
+<h2>Cacheability</h2>
+
+{{ _self.patternTable(
+    'excludedUriPatterns',
+    'Excluded URI Patterns (bypass routes)',
+    'Regex patterns for URIs that are **never** cached (e.g. `^cart`, `^account`). Always wins over inclusions. An empty pattern matches the homepage.',
+    settings.excludedUriPatterns,
+    overrides
+) }}
+
+{{ _self.patternTable(
+    'includedUriPatterns',
+    'Included URI Patterns',
+    'If any patterns are set, **only** matching URIs are cached. Leave empty to cache everything not excluded.',
+    settings.includedUriPatterns,
+    overrides
+) }}
+
+{{ forms.selectField({
+    label: 'Query String Caching',
+    instructions: '"Ignore" caches `?utm_source=x` and the clean URL as the same page. "Respect" gives each unique allowed query string its own cache entry.',
+    id: 'queryStringCaching',
+    name: 'queryStringCaching',
+    value: settings.queryStringCaching,
+    options: [
+        { value: 'ignore', label: 'Ignore query strings (cache as the same page)' },
+        { value: 'respect', label: 'Respect query strings (distinct cache entries)' },
+    ],
+    disabled: 'queryStringCaching' in overrides,
+}) }}
+{{ _self.configWarning('queryStringCaching', overrides) }}
+
+{{ _self.listTable(
+    'excludedQueryStringParams',
+    'Excluded Query Params',
+    'Params that never affect the cache key (marketing/tracking params). A trailing `*` is a wildcard, e.g. `utm_*`.',
+    settings.excludedQueryStringParams,
+    overrides,
+    'Param'
+) }}
+
+{{ _self.listTable(
+    'includedQueryStringParams',
+    'Included Query Params (allowlist)',
+    'If set, **only** these params affect the cache key; everything else is ignored like a marketing param. Exclusions always win. A trailing `*` is a wildcard.',
+    settings.includedQueryStringParams,
+    overrides,
+    'Param'
+) }}
+
+{{ _self.listTable(
+    'excludedSiteIds',
+    'Excluded Sites',
+    'Site IDs that are never cached (multi-site opt-out).',
+    settings.excludedSiteIds,
+    overrides,
+    'Site ID'
+) }}
+
+<hr>
+<h2>Cookies & Sessions</h2>
+
+{{ _self.listTable(
+    'bypassCookies',
+    'Bypass Cookies',
+    'Cookie names (exact) or suffixes whose presence forces a **live, un-shared render** (e.g. a live cart cookie, or your own `edge_bypass` cookie). Empty by default: every visitor, signed in or not, is served the shared shell, and personal content hydrates client-side via islands. Keep the list in sync with your edge tier\'s bypass config. The anonymous `CraftSessionId` and `CRAFT_CSRF_TOKEN` cookies are always ignored by the cache and must not be listed here.',
+    settings.bypassCookies,
+    overrides,
+    'Name or suffix'
+) }}
+
+<hr>
+<h2>Headers, Warming & Hydration</h2>
+
+{{ forms.textField({
+    label: 'Cache-Control TTL',
+    instructions: 'The `max-age` (seconds) on cacheable responses. Long by default; correctness comes from purging, not expiry.',
+    id: 'cacheControlTtl',
+    name: 'cacheControlTtl',
+    type: 'number',
+    min: 1,
+    value: settings.cacheControlTtl,
+    size: 12,
+    disabled: 'cacheControlTtl' in overrides,
+}) }}
+{{ _self.configWarning('cacheControlTtl', overrides) }}
+
+{{ forms.lightswitchField({
+    label: 'Warm Automatically',
+    instructions: 'Re-request purged URLs after each purge so anonymous visitors keep getting instant hits.',
+    id: 'warmCacheAutomatically',
+    name: 'warmCacheAutomatically',
+    on: settings.warmCacheAutomatically,
+    disabled: 'warmCacheAutomatically' in overrides,
+}) }}
+{{ _self.configWarning('warmCacheAutomatically', overrides) }}
+
+{{ forms.textField({
+    label: 'Warmer Concurrency',
+    instructions: 'Concurrent requests used by the cache warmer.',
+    id: 'concurrency',
+    name: 'concurrency',
+    type: 'number',
+    min: 1,
+    value: settings.concurrency,
+    size: 4,
+    disabled: 'concurrency' in overrides,
+}) }}
+{{ _self.configWarning('concurrency', overrides) }}
+
+{{ forms.lightswitchField({
+    label: 'Auto-inject Hydration Script',
+    instructions: 'Register `edge-hydrate.js` (CSRF injection + island hydration) on front-end pages automatically.',
+    id: 'autoInjectHydrationScript',
+    name: 'autoInjectHydrationScript',
+    on: settings.autoInjectHydrationScript,
+    disabled: 'autoInjectHydrationScript' in overrides,
+}) }}
+{{ _self.configWarning('autoInjectHydrationScript', overrides) }}
+
+{{ forms.lightswitchField({
+    label: 'CSRF Endpoint',
+    instructions: 'Serve the uncached `edge/csrf` endpoint used to hydrate forms on cached pages.',
+    id: 'csrfEndpointEnabled',
+    name: 'csrfEndpointEnabled',
+    on: settings.csrfEndpointEnabled,
+    disabled: 'csrfEndpointEnabled' in overrides,
+}) }}
+{{ _self.configWarning('csrfEndpointEnabled', overrides) }}
+
+{{ forms.textField({
+    label: 'Islands Template Path',
+    instructions: 'Site template path prefix that `edge/island?name=x` renders from (island `cart` renders `_edge/islands/cart`).',
+    id: 'islandsTemplatePath',
+    name: 'islandsTemplatePath',
+    value: settings.islandsTemplatePath,
+    disabled: 'islandsTemplatePath' in overrides,
+}) }}
+{{ _self.configWarning('islandsTemplatePath', overrides) }}
+
+<hr>
+<p class="light">
+    Environment-scoped keys (<code>cacheableEnvironments</code>, chunk sizes, and every key above)
+    can also be set in <code>config/edge.php</code>, which always wins over these settings,
+    see the README for the full reference. Saving these settings flushes the edge cache.
+</p>

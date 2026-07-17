@@ -1,0 +1,46 @@
+{# The anonymous shell: identical for every visitor. Anything per-visitor lives in
+   an island (templates/_edge/islands/), per docs/templating.md. #}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ siteName }}{% if title is defined %} · {{ title }}{% endif %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&family=Fragment+Mono&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/assets/css/site.css">
+</head>
+<body>
+<header class="site-header">
+    <a class="wordmark" href="/">{{ siteName }}</a>
+    <nav>
+        <a href="/">Home</a>
+        <a href="/blog">Blog</a>
+    </nav>
+    {# Login state is per-visitor: always an island, never in the shell
+       (docs/templating.md, "The logged-in navbar problem"). #}
+    <div class="account">{{ edgeIsland('account-menu', '<span class="muted">…</span>') }}</div>
+</header>
+
+<main>
+    {% block content %}{% endblock %}
+</main>
+
+<footer class="telemetry">
+    <div class="row">
+        <span class="k">shell rendered</span>
+        <span class="frozen">{{ now|date('Y-m-d H:i:s P') }}</span>
+        <span class="k">(frozen in the cached copy)</span>
+    </div>
+    <div class="row">
+        <span class="k">island clock</span>
+        <span class="live">{{ edgeIsland('server-time', 'waiting for hydration…') }}</span>
+    </div>
+    <p class="note">
+        If the two timestamps differ, you are reading a cached shell that nginx served
+        from disk while the island above was rendered live for this request.
+    </p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends '_layout.twig' %}
+{% set title = 'Home' %}
+
+{% block content %}
+    <h1>Every visitor reads this page from disk.</h1>
+    <p>
+        This site runs Craft CMS behind the Edge plugin's <code>nginx-static</code> driver.
+        The page you're looking at was rendered once, stripped of every cookie, and written
+        to a file; nginx has been serving that file ever since, without booting PHP.
+        The two regions below are <strong>islands</strong>: the only parts of the page
+        rendered live, per visitor, after load.
+    </p>
+
+    <div class="live-region">{{ edgeIsland('greeting', 'waiting for hydration…') }}</div>
+    <div class="live-region">{{ edgeIsland('visit-counter', 'waiting for hydration…') }}</div>
+
+    <h2>Latest posts</h2>
+    {# An element query: Edge records its cache tags, so publishing a NEW post
+       purges this page even though the new entry is not on it yet. #}
+    <ul class="post-list">
+        {% for entry in craft.entries.section('blog').orderBy('postDate desc').limit(5).all() %}
+            <li>
+                <a href="{{ entry.url }}">{{ entry.title }}</a>
+                <time datetime="{{ entry.postDate|date('Y-m-d') }}">{{ entry.postDate|date('M j, Y') }}</time>
+            </li>
+        {% else %}
+            <li><span class="muted">No posts yet.</span></li>
+        {% endfor %}
+    </ul>
+
+    <h2>Sign in</h2>
+    <p>
+        The CSRF field below is <em>empty</em> in the cached HTML. The hydration script
+        fetches this visitor's real token from the uncached <code>edge/csrf</code> endpoint
+        and fills it in, so a shared cached page can still carry a working form.
+    </p>
+    <form method="post" accept-charset="UTF-8" class="sign-in">
+        <input type="hidden" name="{{ craft.app.config.general.csrfTokenName }}" value="">
+        <input type="hidden" name="action" value="users/login">
+        {{ redirectInput('/') }}
+        <label>Username <input type="text" name="loginName" autocomplete="username" required></label>
+        <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+        <button type="submit">Sign in</button>
+    </form>
+    <p><small>Accounts <code>admin</code> and <code>jane</code>, password
+    <code>EdgeExample123!</code>. Signed-in visitors keep reading the same cached shell;
+    only the islands above (and the account menu in the header) change for them.</small></p>
+{% endblock %}

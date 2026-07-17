@@ -1,0 +1,11 @@
+/vendor/
+/composer.lock
+/.phpunit.cache/
+/.phpunit.result.cache
+/test-site/
+/tests/e2e/browser/node_modules/
+/tests/e2e/browser/test-results/
+/tests/e2e/browser/package-lock.json
+.DS_Store
+.idea/
+.vscode/

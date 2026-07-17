@@ -1,0 +1,58 @@
+
+# Craft CMS 5 + Edge (nginx-static driver) example stack.
+#
+# `php` and `queue` share the `web` service's network namespace, so
+# http://localhost resolves to nginx from inside every container exactly like
+# it does from your browser. That keeps one site URL working everywhere: browser
+# hits, `edge/nginx/verify`, and the queue's cache-warm requests.
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: craft
+      MYSQL_USER: craft
+      MYSQL_PASSWORD: craft
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ucraft", "-pcraft"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./:/app
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  php:
+    build: .
+    volumes:
+      - ./:/app
+      - ../:/plugin
+    env_file: .env
+    network_mode: service:web
+    depends_on:
+      - web
+
+  queue:
+    build: .
+    command: php craft queue/listen --verbose=1
+    restart: unless-stopped
+    volumes:
+      - ./:/app
+      - ../:/plugin
+    env_file: .env
+    network_mode: service:web
+    depends_on:
+      - php
+
+volumes:
+  db-data:

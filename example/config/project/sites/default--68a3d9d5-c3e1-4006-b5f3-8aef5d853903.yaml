@@ -1,0 +1,9 @@
+baseUrl: $PRIMARY_SITE_URL
+enabled: true
+handle: default
+hasUrls: true
+language: en-US
+name: 'Edge Example'
+primary: true
+siteGroup: dd66ace3-3776-4fda-a633-4e5e350b41cf # Edge Example
+sortOrder: 1

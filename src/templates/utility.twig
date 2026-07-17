@@ -1,0 +1,57 @@
+{% import '_includes/forms' as forms %}
+
+<div class="pane">
+    <h2>Edge cache health</h2>
+    <table class="data fullwidth">
+        <tbody>
+        <tr><th>Driver</th><td><code>{{ settings.driver }}</code></td></tr>
+        <tr><th>Enabled</th><td>{{ settings.enabled ? 'yes' : 'no' }}</td></tr>
+        <tr><th>Cached pages tracked</th><td>{{ cachedCount }}</td></tr>
+        <tr><th>Element dependencies</th><td>{{ elementLinks }}</td></tr>
+        <tr><th>Query-tag dependencies</th><td>{{ tagLinks }}</td></tr>
+        {% if settings.driver == 'cloudflare' %}
+            <tr><th>Cloudflare configured</th>
+                <td>{{ settings.getParsedCloudflareApiToken() and settings.getParsedCloudflareZoneId()
+                        ? 'yes'
+                        : 'NO: set CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID (caching headers still work; purging and setup are disabled)' }}</td></tr>
+        {% endif %}
+        </tbody>
+    </table>
+
+    <h3>Last verification</h3>
+    {% if lastVerify %}
+        <p>
+            <span class="status {{ lastVerify.ok ? 'live' : 'expired' }}"></span>
+            <strong>{{ lastVerify.ok ? 'Passed' : 'Failed' }}</strong>
+            ({{ lastVerify.driver }}, {{ lastVerify.date }})
+        </p>
+        <ul>
+            {% for line in lastVerify.lines %}<li><code>{{ line }}</code></li>{% endfor %}
+        </ul>
+    {% else %}
+        <p class="light">No verification run yet.</p>
+    {% endif %}
+
+    <div class="buttons">
+        <form method="post" action="" accept-charset="UTF-8" style="display:inline-block">
+            {{ csrfInput() }}
+            {{ actionInput('edge/cp/verify') }}
+            {{ redirectInput('utilities/edge-cache') }}
+            <button type="submit" class="btn">Run verification</button>
+        </form>
+        <form method="post" action="" accept-charset="UTF-8" style="display:inline-block">
+            {{ csrfInput() }}
+            {{ actionInput('edge/cp/clear') }}
+            {{ redirectInput('utilities/edge-cache') }}
+            <button type="submit" class="btn submit">Clear edge cache</button>
+        </form>
+        {% if settings.driver == 'cloudflare' %}
+            <form method="post" action="" accept-charset="UTF-8" style="display:inline-block">
+                {{ csrfInput() }}
+                {{ actionInput('edge/cp/cloudflare-setup') }}
+                {{ redirectInput('utilities/edge-cache') }}
+                <button type="submit" class="btn">Create/update Cloudflare cache rules</button>
+            </form>
+        {% endif %}
+    </div>
+</div>

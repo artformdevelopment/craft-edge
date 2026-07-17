@@ -1,0 +1,55 @@
+dateModified: 1784283381
+email:
+  fromEmail: admin@example.com
+  fromName: 'Edge Example'
+  transportType: craft\mail\transportadapters\Sendmail
+meta:
+  __names__:
+    0bc653ec-ee9d-49b8-a283-c7b148a02887: Post # Post
+    68a3d9d5-c3e1-4006-b5f3-8aef5d853903: 'Edge Example' # Edge Example
+    dd66ace3-3776-4fda-a633-4e5e350b41cf: 'Edge Example' # Edge Example
+    e44b9a92-1ebf-4f8f-9d0f-feef45cb192a: Blog # Blog
+plugins:
+  edge:
+    edition: standard
+    enabled: true
+    schemaVersion: 1.0.0
+    settings:
+      autoInjectHydrationScript: true
+      bypassCookies:
+        - edge_bypass
+      cacheControlTtl: 31536000
+      cachePath: '@storage/edge-cache'
+      cacheableEnvironments: null
+      cloudflareApiToken: null
+      cloudflarePurgeChunkSize: 30
+      cloudflareUsesCacheTags: false
+      cloudflareZoneId: null
+      concurrency: 5
+      csrfEndpointEnabled: true
+      driver: nginx-static
+      enabled: true
+      excludedQueryStringParams:
+        - 'utm_*'
+        - gclid
+        - fbclid
+        - _ga
+        - mc_cid
+        - mc_eid
+      fastCgiPurgeUrl: null
+      islandsTemplatePath: _edge/islands
+      queryStringCaching: ignore
+      warmCacheAutomatically: true
+system:
+  edition: pro
+  live: true
+  name: 'Edge Example'
+  schemaVersion: 5.10.0.0
+  timeZone: America/Los_Angeles
+users:
+  allowPublicRegistration: false
+  defaultGroup: null
+  photoSubpath: null
+  photoVolumeUid: null
+  require2fa: false
+  requireEmailVerification: true

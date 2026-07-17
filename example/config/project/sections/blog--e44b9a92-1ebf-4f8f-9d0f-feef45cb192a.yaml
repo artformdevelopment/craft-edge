@@ -1,0 +1,21 @@
+defaultPlacement: end
+enableVersioning: true
+entryTypes:
+  -
+    uid: 0bc653ec-ee9d-49b8-a283-c7b148a02887 # Post
+handle: blog
+maxAuthors: 1
+minAuthors: 1
+name: Blog
+previewTargets:
+  -
+    label: 'Primary entry page'
+    urlFormat: '{url}'
+propagationMethod: all
+siteSettings:
+  68a3d9d5-c3e1-4006-b5f3-8aef5d853903: # Edge Example
+    enabledByDefault: true
+    hasUrls: true
+    template: blog/_entry
+    uriFormat: 'blog/{slug}'
+type: channel

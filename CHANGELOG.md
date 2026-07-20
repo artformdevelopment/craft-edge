@@ -1,5 +1,33 @@
 # Release Notes for Edge
 
+## 1.2.0 - 2026-07-20
+
+### Added
+- `{{ edgeCsrfInput() }}` Twig function. Emits a token-free placeholder on a page that is
+  being cached (the hydration runtime fills it per visitor) and the real token inline on a
+  page that isn't — an excluded URI, a bypass, a signed-in render, an island fragment. A
+  shared form partial no longer needs a flag threaded through it to say which kind of page
+  it landed in, and the uncached case costs no round trip and needs no JavaScript.
+- The Edge Cache utility and `edge/nginx/verify` now warn when `queryStringCaching` is
+  `respect` on the `nginx-static` driver. That combination silently writes one file per
+  query string that the tier can never look up, because it serves `<host>/<uri>/index.html`
+  with no place for a query segment.
+
+### Fixed
+- The shipped nginx configs now bypass the cache for any request carrying a query param
+  that isn't in `excludedQueryStringParams`. Without it, `/shop?brand=x` was answered from
+  the unfiltered `/shop` entry, since `ignore` mode leaves the query string out of the key.
+  `tests/guards.php` asserts the map and the origin guard agree case by case.
+- `location @edge` now sends `Cache-Control: public, max-age=0, must-revalidate` on a hit.
+  nginx serves the stored file verbatim, so the origin's headers never reached the visitor
+  and browsers fell back to heuristic freshness — holding pages for an unpredictable window
+  that no purge could reach.
+
+### Changed
+- `Plugin::proxyWarnings()` is now `Plugin::configWarnings()` and covers driver/query-mode
+  mismatches as well as trusted-proxy problems.
+
+
 ## 1.1.0 - 2026-07-20
 
 ### Fixed

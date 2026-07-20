@@ -30,6 +30,11 @@ function check(string $name, bool $ok): void
     echo "  ok    $name\n";
 }
 
+function checkEq(string $name, bool $got, bool $want): void
+{
+    check($name . ' (want ' . ($want ? 'bypass' : 'cache') . ')', $got === $want);
+}
+
 /**
  * A context that would otherwise cache, so each test isolates one branch.
  */
@@ -113,6 +118,37 @@ check('null values ignored',
     Generator::identifyingFieldInContent('<p>copy</p>', ['email' => null]) === null);
 check('very short values do not false-positive',
     Generator::identifyingFieldInContent('<p>a boat</p>', ['username' => 'a']) === null);
+
+echo "\nnginx skip-args map mirrors the ignore-mode key (P9)\n";
+
+// The shipped map in docs/nginx-static.conf decides SERVING; Cacheability decides
+// STORING. If they disagree, /shop?brand=x gets served the unfiltered /shop entry, so
+// this asserts the two stay in sync. nginx uses PCRE, so the regex is verbatim.
+$skipArgs = '/(^|&)(?!utm_|gclid=|fbclid=|_ga=|mc_cid=|mc_eid=)[^=&]+=/';
+
+foreach ([
+    '' => false,
+    'utm_source=newsletter' => false,
+    'utm_source=a&utm_medium=b' => false,
+    'gclid=123' => false,
+    'fbclid=abc' => false,
+    '_ga=1.2.3' => false,
+    'brand=aveda' => true,
+    'sort=price' => true,
+    'q=shampoo' => true,
+    'page=2' => true,
+    'utm_source=a&brand=aveda' => true,
+    'brand=aveda&utm_source=a' => true,
+] as $args => $shouldBypass) {
+    $nginxBypasses = preg_match($skipArgs, $args) === 1;
+
+    parse_str($args, $params);
+    $originStores = $cacheability->evaluateRequest(ctx(['queryParams' => $params]), $settings)->cacheable;
+
+    $label = $args === '' ? '(no query)' : $args;
+    checkEq("nginx bypasses: $label", $nginxBypasses, $shouldBypass);
+    checkEq("origin declines to store: $label", !$originStores, $shouldBypass);
+}
 
 echo "\n";
 if ($failures !== []) {

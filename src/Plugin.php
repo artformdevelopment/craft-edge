@@ -118,10 +118,24 @@ class Plugin extends \craft\base\Plugin
     /**
      * @return array{ok: bool, lines: string[], driver: string, date: string}|null
      */
-    public static function proxyWarnings(): array
+    public static function configWarnings(): array
     {
         $general = Craft::$app->getConfig()->getGeneral();
+        $settings = self::getInstance()->getSettings();
         $warnings = [];
+
+        // The nginx-static tier looks a page up as `<host>/<uri>/index.html`. There is no
+        // point in that path where a query string can be matched, so entries written for
+        // one can never be read back: the driver stores a file per query combination and
+        // nginx serves none of them.
+        if ($settings->driver === Settings::DRIVER_NGINX_STATIC
+            && $settings->queryStringCaching === Settings::QUERY_STRINGS_RESPECT
+        ) {
+            $warnings[] = "queryStringCaching is 'respect' on the nginx-static driver. "
+                . 'Pages with a query string are written to disk but can never be served '
+                . "from it, so those requests always reach PHP. Use 'ignore' and bypass "
+                . 'query-varying requests at nginx (see docs/nginx-static.conf).';
+        }
 
         $trustsAnyHost = in_array('any', array_map(
             static fn($host) => is_string($host) ? strtolower($host) : $host,
@@ -134,7 +148,7 @@ class Plugin extends \craft\base\Plugin
         if ($trustsAnyHost && !empty($general->ipHeaders)) {
             $warnings[] = 'trustedHosts includes "any" while ipHeaders is set: any client can '
                 . 'spoof its IP via X-Forwarded-For. Either narrow trustedHosts to the proxy, '
-                . 'or clear ipHeaders and let the proxy set REMOTE_ADDR.';
+                . 'or clear ipHeaders and let the proxy set REMOTE_ADDR (see docs/reverse-proxy.md).';
         }
 
         return $warnings;

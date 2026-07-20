@@ -59,7 +59,7 @@ class EdgeUtility extends Utility
             'elementLinks' => $elementLinks,
             'tagLinks' => $tagLinks,
             'lastVerify' => $plugin->getLastVerifyResult(),
-            'proxyWarnings' => Plugin::proxyWarnings(),
+            'configWarnings' => Plugin::configWarnings(),
         ]);
     }
 }

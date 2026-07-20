@@ -69,7 +69,7 @@ class NginxController extends Controller
             $this->stdout("$line\n");
         }
 
-        foreach (Plugin::proxyWarnings() as $warning) {
+        foreach (Plugin::configWarnings() as $warning) {
             $this->stdout("WARNING: $warning\n", Console::FG_YELLOW);
         }
 

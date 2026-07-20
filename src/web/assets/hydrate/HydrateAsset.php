@@ -40,6 +40,7 @@ class HydrateAsset extends AssetBundle
             $config = Json::encode([
                 'csrfUrl' => $this->rootRelative(UrlHelper::siteUrl('edge/csrf')),
                 'islandUrl' => $this->rootRelative(UrlHelper::siteUrl('edge/island')),
+                'hydrateUrl' => $this->rootRelative(UrlHelper::siteUrl('edge/hydrate')),
                 'csrfParam' => Craft::$app->getConfig()->getGeneral()->csrfTokenName,
             ]);
             $view->registerJs("window.EdgeConfig = $config;", View::POS_HEAD);

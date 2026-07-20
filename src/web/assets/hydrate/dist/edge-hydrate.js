@@ -2,21 +2,23 @@
  * Edge hydration runtime.
  *
  * Cached pages are cookie-free and identical for every anonymous visitor. This script
- * makes them personal again from uncached endpoints:
- *  1. fetch edge/csrf (starts the session, sets CraftSessionId + CRAFT_CSRF_TOKEN) and
- *     inject the token into every Craft CSRF field and meta tag;
- *  2. fetch each [data-edge-island] fragment from edge/island and swap it in, then fill
- *     the CSRF fields inside the markup that just arrived.
+ * makes them personal again from a single uncached request: it fetches the visitor's CSRF
+ * token together with every island fragment the page needs, fills the CSRF fields, and
+ * swaps the islands in.
  *
- * Island markup lands after the initial token fill, so any form inside an island has to
- * be filled again once it exists. The token request is shared between all of them.
+ * One round trip regardless of island count. A cache hit costs the origin one request,
+ * not one per island plus one for the token.
  */
 (function() {
     'use strict';
 
     var config = window.EdgeConfig || {};
-    var csrfPromise = null;
+    var hydratePromise = null;
     var lastCsrf = null;
+
+    function islandElements() {
+        return Array.prototype.slice.call(document.querySelectorAll('[data-edge-island]'));
+    }
 
     /**
      * Fills every CSRF field under `root`. Handles both a plain hidden input and Craft's
@@ -57,63 +59,71 @@
     }
 
     /**
-     * Resolves with the token payload, fetching it at most once per page load.
+     * The single hydration request. Resolves with {token, param, islands}; never rejects,
+     * because a hydration failure must leave the page usable rather than break it.
      */
-    function ensureCsrf() {
-        if (csrfPromise) {
-            return csrfPromise;
+    function hydrateOnce(names) {
+        if (hydratePromise) {
+            return hydratePromise;
         }
 
-        if (!config.csrfUrl) {
-            csrfPromise = Promise.resolve(null);
+        var url = config.hydrateUrl || config.csrfUrl;
 
-            return csrfPromise;
+        if (!url) {
+            hydratePromise = Promise.resolve(null);
+
+            return hydratePromise;
         }
 
-        csrfPromise = fetch(config.csrfUrl, {
+        if (config.hydrateUrl && names && names.length) {
+            url += (url.indexOf('?') === -1 ? '?' : '&') + 'islands=' + encodeURIComponent(names.join(','));
+        }
+
+        hydratePromise = fetch(url, {
             credentials: 'same-origin',
             headers: {'Accept': 'application/json'}
         })
             .then(function(response) {
                 if (!response.ok) {
-                    throw new Error('edge/csrf returned ' + response.status);
+                    throw new Error('edge hydration returned ' + response.status);
                 }
                 return response.json();
             })
             .then(function(data) {
-                if (!data || !data.token || !data.param) {
-                    return null; // CSRF protection disabled, forms submit without a token.
+                if (data && data.token && data.param) {
+                    lastCsrf = {token: data.token, param: data.param};
                 }
-                lastCsrf = data;
-                return data;
+                return data || null;
             })
             .catch(function(error) {
-                console.warn('[edge] CSRF hydration failed:', error);
+                console.warn('[edge] hydration failed:', error);
                 return null;
             });
 
-        return csrfPromise;
+        return hydratePromise;
     }
 
-    function hydrateCsrf() {
-        return ensureCsrf().then(function(data) {
-            if (!data) {
-                return null;
-            }
-            applyCsrf(document, data);
-            document.dispatchEvent(new CustomEvent('edge:csrf', {detail: data}));
+    function swapIsland(el, html) {
+        el.innerHTML = html;
+        el.setAttribute('data-edge-hydrated', '1');
 
-            return data;
-        });
+        // The fragment may contain forms that did not exist during the document pass.
+        applyCsrf(el, lastCsrf);
+        document.dispatchEvent(new CustomEvent('edge:island', {
+            detail: {name: el.getAttribute('data-edge-island'), element: el}
+        }));
     }
 
-    function hydrateIslands() {
-        var islands = document.querySelectorAll('[data-edge-island]');
-        if (!islands.length || !config.islandUrl) {
+    /**
+     * Falls back to the per-island endpoint, for a page served from a cache that predates
+     * the batched endpoint (the shell carries whatever EdgeConfig was baked into it).
+     */
+    function hydrateIslandsIndividually(els) {
+        if (!config.islandUrl) {
             return;
         }
 
-        islands.forEach(function(el) {
+        els.forEach(function(el) {
             var name = el.getAttribute('data-edge-island');
             var url = config.islandUrl + (config.islandUrl.indexOf('?') === -1 ? '?' : '&') + 'name=' + encodeURIComponent(name);
 
@@ -125,15 +135,7 @@
                     return response.text();
                 })
                 .then(function(html) {
-                    el.innerHTML = html;
-                    el.setAttribute('data-edge-hydrated', '1');
-
-                    // The fragment may contain forms that did not exist during the
-                    // document pass, so fill them before anything reacts to the swap.
-                    return ensureCsrf().then(function(data) {
-                        applyCsrf(el, data);
-                        document.dispatchEvent(new CustomEvent('edge:island', {detail: {name: name, element: el}}));
-                    });
+                    swapIsland(el, html);
                 })
                 .catch(function(error) {
                     // Leave the placeholder in place, an island failure never breaks the page.
@@ -142,22 +144,49 @@
         });
     }
 
+    function run() {
+        var els = islandElements();
+        var names = els.map(function(el) {
+            return el.getAttribute('data-edge-island');
+        });
+
+        hydrateOnce(names).then(function(data) {
+            if (!data) {
+                return;
+            }
+
+            applyCsrf(document, lastCsrf);
+
+            if (lastCsrf) {
+                document.dispatchEvent(new CustomEvent('edge:csrf', {detail: lastCsrf}));
+            }
+
+            if (!data.islands) {
+                hydrateIslandsIndividually(els);
+
+                return;
+            }
+
+            els.forEach(function(el) {
+                var html = data.islands[el.getAttribute('data-edge-island')];
+                if (typeof html === 'string') {
+                    swapIsland(el, html);
+                }
+            });
+        });
+    }
+
     // For markup a site injects itself (modals, cart drawers, anything fetched later).
     window.EdgeCsrf = {
         apply: applyCsrf,
         ensure: function(root) {
-            return ensureCsrf().then(function(data) {
-                applyCsrf(root, data);
+            return hydrateOnce([]).then(function() {
+                applyCsrf(root, lastCsrf);
 
-                return data;
+                return lastCsrf;
             });
         }
     };
-
-    function run() {
-        hydrateCsrf();
-        hydrateIslands();
-    }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', run);

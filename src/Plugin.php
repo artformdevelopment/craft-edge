@@ -352,6 +352,7 @@ class Plugin extends \craft\base\Plugin
             function(RegisterUrlRulesEvent $event) {
                 $event->rules['edge/csrf'] = 'edge/dynamic/csrf';
                 $event->rules['edge/island'] = 'edge/dynamic/island';
+                $event->rules['edge/hydrate'] = 'edge/dynamic/hydrate';
             }
         );
     }

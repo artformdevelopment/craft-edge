@@ -42,20 +42,88 @@ class DynamicController extends Controller
 
         $this->setNoStore();
 
+        return $this->asJson($this->csrfPayload());
+    }
+
+    /**
+     * GET edge/hydrate?islands=a,b,c: the whole per-visitor payload in one round trip.
+     *
+     * A cached page is otherwise paying one uncached request for the token plus one per
+     * island, all of which reach PHP. Batching them means a cache hit costs a single
+     * origin request no matter how many islands the page has.
+     */
+    public function actionHydrate(): Response
+    {
+        $this->requireAcceptsJson();
+        $this->setNoStore();
+
+        $payload = $this->csrfPayload();
+        $payload['islands'] = [];
+
+        $requested = (string)Craft::$app->getRequest()->getQueryParam('islands', '');
+
+        foreach (array_filter(array_map('trim', explode(',', $requested))) as $name) {
+            if (!self::isValidIslandName($name)) {
+                continue;
+            }
+            // A missing or broken island returns an empty fragment rather than failing
+            // the batch: one bad island must not cost the page its token.
+            $payload['islands'][$name] = $this->renderIsland($name) ?? '';
+        }
+
+        return $this->asJson($payload);
+    }
+
+    /**
+     * @return array{token: string|null, param: string|null}
+     */
+    private function csrfPayload(): array
+    {
         $generalConfig = Craft::$app->getConfig()->getGeneral();
 
-        if (!$generalConfig->enableCsrfProtection) {
-            return $this->asJson(['token' => null, 'param' => null]);
+        if (!$generalConfig->enableCsrfProtection
+            || !Plugin::getInstance()->getSettings()->csrfEndpointEnabled
+        ) {
+            return ['token' => null, 'param' => null];
         }
 
         // getCsrfToken() starts the CSRF cookie; touching the session gives the visitor
         // their CraftSessionId. Both Set-Cookie headers pass through (uncached response).
         Craft::$app->getSession()->open();
 
-        return $this->asJson([
+        return [
             'token' => Craft::$app->getRequest()->getCsrfToken(),
             'param' => $generalConfig->csrfTokenName,
-        ]);
+        ];
+    }
+
+    private static function isValidIslandName(string $name): bool
+    {
+        return $name !== ''
+            && preg_match('/^[a-zA-Z0-9_\-\/]+$/', $name) === 1
+            && !str_contains($name, '..');
+    }
+
+    /**
+     * Renders an island fragment, or null when the template doesn't exist.
+     */
+    private function renderIsland(string $name): ?string
+    {
+        $template = trim(Plugin::getInstance()->getSettings()->islandsTemplatePath, '/') . '/' . $name;
+        $view = Craft::$app->getView();
+
+        if (!$view->doesTemplateExist($template)) {
+            return null;
+        }
+
+        try {
+            return $view->renderTemplate($template);
+        } catch (\Throwable $e) {
+            Craft::warning("Edge island `$name` failed to render: {$e->getMessage()}", __METHOD__);
+
+            // An island error must never 500 the page; return an empty fragment.
+            return '';
+        }
     }
 
     /**
@@ -68,25 +136,14 @@ class DynamicController extends Controller
 
         $name = (string)Craft::$app->getRequest()->getQueryParam('name', '');
 
-        if ($name === '' || !preg_match('/^[a-zA-Z0-9_\-\/]+$/', $name) || str_contains($name, '..')) {
+        if (!self::isValidIslandName($name)) {
             throw new NotFoundHttpException('Invalid island name.');
         }
 
-        $template = trim(Plugin::getInstance()->getSettings()->islandsTemplatePath, '/') . '/' . $name;
+        $html = $this->renderIsland($name);
 
-        $view = Craft::$app->getView();
-
-        if (!$view->doesTemplateExist($template)) {
-            throw new NotFoundHttpException("Island template `$template` not found.");
-        }
-
-        try {
-            $html = $view->renderTemplate($template);
-        } catch (\Throwable $e) {
-            Craft::warning("Edge island `$name` failed to render: {$e->getMessage()}", __METHOD__);
-
-            // An island error must never 500 the page; return an empty fragment.
-            $html = '';
+        if ($html === null) {
+            throw new NotFoundHttpException("Island template for `$name` not found.");
         }
 
         $response = Craft::$app->getResponse();

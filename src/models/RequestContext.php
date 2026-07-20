@@ -35,6 +35,8 @@ final class RequestContext
         public array $queryParams = [],
         public array $cookies = [],
         public array $anonymousCookieNames = ['CraftSessionId', 'CRAFT_CSRF_TOKEN', 'PHPSESSID'],
+        public ?string $host = null,
+        public ?string $siteHost = null,
     ) {
     }
 
@@ -86,6 +88,8 @@ final class RequestContext
                 $generalConfig->csrfTokenName,
                 'PHPSESSID',
             ])),
+            host: $request->getHostName(),
+            siteHost: SiteUri::hostForSite($siteId),
         );
     }
 }

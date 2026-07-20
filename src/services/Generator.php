@@ -164,6 +164,33 @@ class Generator extends Component
         // Cookie-safety layer: strips Set-Cookie/Vary, sets public cache headers.
         $driver->prepareResponse($response, true, $tags);
 
+        // A real CSRF token baked into a shared page breaks every form served from it.
+        // Only the URI is logged, never the token.
+        $csrfParam = Craft::$app->getConfig()->getGeneral()->csrfTokenName;
+        if (self::containsCsrfToken($response->content, (string)$csrfParam)) {
+            Craft::warning(
+                "Edge did not store {$siteUri->uri}: the page contains a rendered CSRF token. "
+                . 'Use an empty input hydrated by edge/csrf on cacheable pages.',
+                __METHOD__,
+            );
+            $response->getHeaders()->set('Cache-Control', 'private, no-store');
+
+            return;
+        }
+
+        // Storing a logged-in render is opt-in; guard it against the obvious leak.
+        $field = self::identifyingFieldInContent($response->content, self::currentUserIdentifiers());
+        if ($field !== null) {
+            Craft::warning(
+                "Edge did not store {$siteUri->uri}: the response contains the signed-in "
+                . "user's {$field}. The shell must be identity-independent to be shared.",
+                __METHOD__,
+            );
+            $response->getHeaders()->set('Cache-Control', 'private, no-store');
+
+            return;
+        }
+
         // Belt and braces: if a Set-Cookie survived (a plugin wrote headers directly),
         // do NOT store the response.
         $decision = $plugin->cacheability->evaluateResponse(
@@ -183,6 +210,68 @@ class Generator extends Component
         }
 
         $this->saveDependencies($siteUri, array_keys($this->elementIds), array_keys($this->tags));
+    }
+
+    /**
+     * Whether the HTML carries a rendered CSRF token: an input named after the configured
+     * token param with a non-empty value. Craft's async `<craft-csrf-input>` placeholder
+     * and an empty `value=""` both carry no token and must not match.
+     */
+    public static function containsCsrfToken(string $html, string $param): bool
+    {
+        if ($param === '' || stripos($html, $param) === false) {
+            return false;
+        }
+
+        $quoted = preg_quote($param, '/');
+
+        // Attribute order varies, so find the input by name, then look for a non-empty
+        // value inside that same tag.
+        if (preg_match('/<input\b[^>]*\bname=["\']' . $quoted . '["\'][^>]*>/i', $html, $m) !== 1) {
+            return false;
+        }
+
+        return preg_match('/\bvalue=["\'][^"\']+["\']/i', $m[0]) === 1;
+    }
+
+    /**
+     * The name of the signed-in user's identifying field that appears verbatim in the
+     * HTML, or null. A blunt containment check: it catches the common leak (a greeting,
+     * an email in an account link) but proves nothing about permission-scoped queries.
+     *
+     * @param array<string, string|null> $identifiers field name => value
+     */
+    public static function identifyingFieldInContent(string $html, array $identifiers): ?string
+    {
+        foreach ($identifiers as $field => $value) {
+            // Short values produce false positives against ordinary page copy.
+            if (is_string($value) && strlen($value) >= 3 && str_contains($html, $value)) {
+                return (string)$field;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The signed-in user's identifying values, keyed by field name. Empty when nobody is
+     * signed in.
+     *
+     * @return array<string, string|null>
+     */
+    private static function currentUserIdentifiers(): array
+    {
+        $user = Craft::$app->getUser()->getIdentity();
+
+        if ($user === null) {
+            return [];
+        }
+
+        return [
+            'email' => $user->email ?? null,
+            'username' => $user->username ?? null,
+            'full name' => $user->fullName ?? null,
+        ];
     }
 
     /**

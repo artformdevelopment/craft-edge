@@ -18,6 +18,13 @@
         </tbody>
     </table>
 
+    {% if proxyWarnings %}
+        <h3>Reverse proxy</h3>
+        {% for warning in proxyWarnings %}
+            <p class="error"><span class="status expired"></span>{{ warning }}</p>
+        {% endfor %}
+    {% endif %}
+
     <h3>Last verification</h3>
     {% if lastVerify %}
         <p>

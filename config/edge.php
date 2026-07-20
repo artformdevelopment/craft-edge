@@ -71,8 +71,10 @@ return [
     // Max URLs per Cloudflare purge API request (API limit: 30 on all plans).
     'cloudflarePurgeChunkSize' => 30,
 
-    // max-age for `Cache-Control: public, max-age=...` on cacheable responses.
-    // Long by default: correctness comes from purging, not TTL expiry.
+    // Shared-cache TTL, sent as `s-maxage`. Browsers are always sent `max-age=0,
+    // must-revalidate`: a purge reaches the edge tier but can never reach a visitor's
+    // browser, so a long browser TTL would strand stale HTML on every device that has
+    // already loaded the page. Long by default: correctness comes from purging.
     'cacheControlTtl' => 31536000,
 
     // Re-warm purged URLs automatically (queued WarmJob after each purge).
@@ -90,4 +92,19 @@ return [
     // Site template path prefix that `edge/island?name=x` renders from
     // (island 'cart' renders the site template '_edge/islands/cart').
     'islandsTemplatePath' => '_edge/islands',
+
+    // Whether a render for a signed-in visitor may be stored in the shared cache.
+    //
+    // The edge tier already SERVES the shared copy to signed-in visitors, so leaving this
+    // off means their visits never populate the cache: only an anonymous visitor warms a
+    // page. Turning it on asserts that your shell is identity-independent, i.e. every
+    // per-visitor fragment is an island and no template in the cacheable shell branches
+    // on `currentUser`, customer group, or permission-scoped element queries.
+    //
+    // A containment check refuses to store a response containing the signed-in user's
+    // email, username or full name. That catches the obvious leak (a greeting, an account
+    // link) but proves nothing about group-scoped pricing or elements visible to one
+    // visitor and not another. Verify before enabling: load a page signed in, fetch the
+    // same URL cookie-free, and diff.
+    'cacheLoggedInRenders' => false,
 ];

@@ -63,7 +63,7 @@ class Cacheability extends Component
             return Decision::skip('token request');
         }
 
-        if ($ctx->isLoggedIn) {
+        if ($ctx->isLoggedIn && !$settings->cacheLoggedInRenders) {
             return Decision::skip('logged-in user');
         }
 
@@ -86,6 +86,27 @@ class Cacheability extends Component
         // A `no-cache` request param always skips the cache (a debugging aid).
         if (!empty($ctx->queryParams['no-cache'])) {
             return Decision::skip('no-cache param');
+        }
+
+        // The stored file is keyed by the site's own host, but the response was rendered
+        // against the request Host (siteUrl(), @web, redirects, canonical tags). A request
+        // arriving on any other host would write host-specific URLs into the canonical
+        // entry, so it renders live and is never stored.
+        if ($ctx->host !== null && $ctx->siteHost !== null
+            && strcasecmp($ctx->host, $ctx->siteHost) !== 0
+        ) {
+            return Decision::skip("host mismatch: {$ctx->host}");
+        }
+
+        // In 'ignore' mode the query string is dropped from the cache key, so a response
+        // rendered for ?foo=bar would be stored as the bare URI and then served to every
+        // visitor of that URI. Only store when nothing meaningful remains.
+        if ($settings->queryStringCaching === Settings::QUERY_STRINGS_IGNORE) {
+            foreach (array_keys($ctx->queryParams) as $name) {
+                if (!$this->isExcludedQueryParam((string)$name, $settings)) {
+                    return Decision::skip("query param not in cache key: $name");
+                }
+            }
         }
 
         $uri = $this->normalizeUriPath($ctx->uri);

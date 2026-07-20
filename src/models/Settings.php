@@ -119,7 +119,8 @@ class Settings extends Model
     public int $cloudflarePurgeChunkSize = 30;
 
     /**
-     * @var int max-age for `Cache-Control: public, max-age=...` on cacheable responses.
+     * @var int Shared-cache TTL, sent as `s-maxage`. Browsers always revalidate
+     * (`max-age=0`), because a purge reaches the edge tier but never a visitor's browser.
      * Long by default: invalidation is edge-purge-driven, not TTL-driven.
      */
     public int $cacheControlTtl = 31536000;
@@ -148,6 +149,20 @@ class Settings extends Model
      * @var string Site template path prefix that `edge/island?name=x` renders from.
      */
     public string $islandsTemplatePath = '_edge/islands';
+
+    /**
+     * @var bool Whether a render for a signed-in visitor may be stored in the shared cache.
+     *
+     * The edge tier already serves the shared copy to signed-in visitors, so leaving this
+     * off means their visits never populate the cache. Turning it on is an assertion that
+     * the shell is identity-independent: every per-visitor fragment is an island, and no
+     * template branches on `currentUser`, customer group, or permission-scoped queries.
+     *
+     * A containment check refuses to store a response carrying the signed-in user's email,
+     * username or full name, but that catches only the obvious leak. It cannot see
+     * group-scoped pricing, or elements visible to one visitor and not another.
+     */
+    public bool $cacheLoggedInRenders = false;
 
     /**
      * Parsed Cloudflare API token (supports $ENV_VAR style references).

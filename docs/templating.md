@@ -106,6 +106,16 @@ What happens at runtime:
 > Use the empty-input pattern above. On pages that are *always* dynamic (excluded URIs,
 > logged-in-only pages), `csrfInput()` is fine as usual: those aren't cached.
 
+Edge enforces this rather than trusting you to remember it. If a response about to be
+stored contains an input named after `csrfTokenName` with a non-empty value, Edge refuses
+to store the page, downgrades it to `private, no-store`, and logs the URI (never the
+token). So the failure is a page that quietly stops caching, with a warning in
+`storage/logs/`, rather than a shared page full of broken forms.
+
+Craft's async `<craft-csrf-input>` placeholder carries no token, so
+[`asyncCsrfInputs`](https://craftcms.com/docs/5.x/reference/config/general.html#asynccsrfinputs)
+is safe to leave on: hydration fills those in too.
+
 ### JavaScript that needs the token
 
 If your JS reads the token from a meta tag, render it empty too and listen for the
@@ -126,6 +136,20 @@ document.addEventListener('edge:csrf', function (e) {
 If CSRF protection is disabled (`enableCsrfProtection: false`), `edge/csrf` returns
 `{token: null}` and hydration simply does nothing: forms submit without a token, as Craft
 expects.
+
+**Markup you inject yourself** — a modal, a cart drawer, anything fetched after page load —
+won't have been touched by the initial pass. Fill it with `window.EdgeCsrf`:
+
+```js
+const drawer = document.querySelector('#cart-drawer');
+drawer.innerHTML = await (await fetch('/some/fragment')).text();
+await window.EdgeCsrf.ensure(drawer);   // fills inputs + <craft-csrf-input> inside
+```
+
+`EdgeCsrf.ensure(root)` resolves once the token is available, fetching it at most once per
+page load and reusing it thereafter. `EdgeCsrf.apply(root)` is the synchronous version for
+when you know the token has already arrived. Islands are handled automatically: Edge fills
+each fragment before dispatching `edge:island`.
 
 ## Islands: per-visitor content
 

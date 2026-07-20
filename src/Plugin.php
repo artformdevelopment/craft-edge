@@ -118,6 +118,28 @@ class Plugin extends \craft\base\Plugin
     /**
      * @return array{ok: bool, lines: string[], driver: string, date: string}|null
      */
+    public static function proxyWarnings(): array
+    {
+        $general = Craft::$app->getConfig()->getGeneral();
+        $warnings = [];
+
+        $trustsAnyHost = in_array('any', array_map(
+            static fn($host) => is_string($host) ? strtolower($host) : $host,
+            (array)$general->trustedHosts,
+        ), true);
+
+        // Yii reads the LEFTMOST X-Forwarded-For entry, and a proxy that appends to the
+        // header preserves whatever the client sent. Trusting every REMOTE_ADDR therefore
+        // lets any client choose its own apparent IP.
+        if ($trustsAnyHost && !empty($general->ipHeaders)) {
+            $warnings[] = 'trustedHosts includes "any" while ipHeaders is set: any client can '
+                . 'spoof its IP via X-Forwarded-For. Either narrow trustedHosts to the proxy, '
+                . 'or clear ipHeaders and let the proxy set REMOTE_ADDR.';
+        }
+
+        return $warnings;
+    }
+
     public function getLastVerifyResult(): ?array
     {
         $value = Craft::$app->getCache()->get(self::LAST_VERIFY_CACHE_KEY);
@@ -201,7 +223,8 @@ class Plugin extends \craft\base\Plugin
 
             // Not cacheable: make sure no edge tier stores it. Cookies pass through
             // untouched. This is where sessions, logins and mutations live.
-            Event::on(Response::class, Response::EVENT_AFTER_PREPARE, function(Event $event) use ($ctx) {
+            $skipReason = $decision->reason;
+            Event::on(Response::class, Response::EVENT_AFTER_PREPARE, function(Event $event) use ($ctx, $skipReason) {
                 // Craft's resource requests manage their own cache headers.
                 if (str_starts_with(trim($ctx->uri, '/'), 'cpresources')) {
                     return;
@@ -209,7 +232,7 @@ class Plugin extends \craft\base\Plugin
 
                 /** @var Response $response */
                 $response = $event->sender;
-                $this->getDriver()->prepareResponse($response, false);
+                $this->getDriver()->prepareResponse($response, false, [], $skipReason);
             }, append: false);
         });
     }

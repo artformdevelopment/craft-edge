@@ -32,7 +32,7 @@ interface CacheDriverInterface
      *
      * @param string[] $tags Cache tags recorded for the page (used for Cache-Tag headers).
      */
-    public function prepareResponse(Response $response, bool $cacheable, array $tags = []): void;
+    public function prepareResponse(Response $response, bool $cacheable, array $tags = [], ?string $skipReason = null): void;
 
     /**
      * Stores the rendered, cookie-free HTML for a URI. Returns false on failure

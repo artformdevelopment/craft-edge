@@ -34,7 +34,16 @@ final class SiteUri
      */
     public function getHostPath(): ?string
     {
-        $site = Craft::$app->getSites()->getSiteById($this->siteId, true);
+        return self::hostPathForSite($this->siteId);
+    }
+
+    /**
+     * The host plus any base path for a site's base URL, e.g. "example.com" or
+     * "example.com/subdir". Null when the site has no absolute base URL.
+     */
+    public static function hostPathForSite(int $siteId): ?string
+    {
+        $site = Craft::$app->getSites()->getSiteById($siteId, true);
         if ($site === null) {
             return null;
         }
@@ -48,6 +57,17 @@ final class SiteUri
 
         // Strip any :port so the path matches nginx's $host, which never includes one.
         return preg_replace('/:\d+/', '', $hostPath);
+    }
+
+    /**
+     * Just the hostname for a site: no base path, no port. Used to compare against the
+     * request Host. Null when the site has no absolute base URL.
+     */
+    public static function hostForSite(int $siteId): ?string
+    {
+        $hostPath = self::hostPathForSite($siteId);
+
+        return $hostPath === null ? null : (explode('/', $hostPath)[0] ?: null);
     }
 
     /**

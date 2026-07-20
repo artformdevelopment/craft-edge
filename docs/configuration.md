@@ -200,7 +200,8 @@ Three rules to keep in mind:
   misconfiguration internally (anonymous cookies never bypass even if listed), but don't
   rely on that; keep them off the list.
 - **Don't add Craft's login cookies either.** Signed-in visitors are meant to be served
-  the shared shell (their renders are never *stored*; see
+  the shared shell (their renders aren't *stored* unless you opt into
+  [`cacheLoggedInRenders`](#cacheloggedinrenders); see
   [the cookie model](how-it-works.md#the-cookie-model-the-important-part)). Bypassing them
   would turn the cache off for exactly the visitors who use the site most; personal
   content belongs in islands instead.
@@ -244,16 +245,25 @@ limits with very long URLs).
 ## Headers & TTL
 
 ### `cacheControlTtl`
-`int` seconds, default `31536000` (one year). The `max-age` on cacheable responses. It's
-long on purpose: Edge keeps content correct by **purging**, not by waiting for expiry, so a
-short TTL would only lower your hit rate for no correctness benefit. The exception is
-**browsers**, which see this `max-age` too and can't be purged. How much that matters
-depends on the driver: on `nginx-fastcgi` and `cloudflare` every hit carries the header,
-so a browser can hold a page for the full TTL (see the
-[browser-TTL caveat on Cloudflare](driver-cloudflare.md#the-browser-ttl-caveat)); on
-`nginx-static` only the priming miss carries it, but the visitor who primed a page can
-still hold it. Lower it (or set a separate Cloudflare browser TTL) if browser-side
-staleness matters.
+`int` seconds, default `31536000` (one year). The **shared-cache** TTL. Cacheable responses
+are sent as:
+
+```
+Cache-Control: public, s-maxage=<cacheControlTtl>, max-age=0, must-revalidate
+```
+
+`s-maxage` is honoured by shared caches — nginx, Cloudflare — and ignored by browsers.
+`max-age=0, must-revalidate` sends browsers back to the edge on every navigation.
+
+That split is deliberate, and it is the only correct one. Edge keeps content correct by
+**purging**, so a long shared TTL costs nothing: a purge reaches the edge tier immediately.
+A purge can never reach a visitor's browser. Sending a long `max-age` would strand stale
+HTML on every device that had already loaded the page, with no way to recall it short of
+changing the URL.
+
+Revalidation is cheap. Under `nginx-static` the conditional request is answered from the
+static file with a `304` and never reaches PHP; under `nginx-fastcgi` and `cloudflare` it is
+answered by the tier.
 
 ## Warming & hydration
 
@@ -279,6 +289,34 @@ on cacheable pages; it's what lets those forms get a valid token. Turning it off
 endpoint 404 and disables CSRF hydration; only do that if no cacheable page ever contains a
 Craft form.
 
+### `cacheLoggedInRenders`
+`bool`, default `false`. Whether a render for a **signed-in** visitor may be stored in the
+shared cache.
+
+Signed-in visitors are already *served* the shared file (see
+[the cookie model](how-it-works.md#the-cookie-model-the-important-part)). This setting
+controls the other half: whether their visits also *populate* it. Left off, only an
+anonymous visitor — or the cookie-free warmer — ever warms a page, so a page browsed solely
+by signed-in staff stays uncached.
+
+Turn it on only when your shell is identity-independent: every per-visitor fragment is an
+[island](templating.md#islands-per-visitor-content), and nothing in the cacheable shell
+branches on `currentUser`, customer group, or permission-scoped element queries.
+
+```php
+'cacheLoggedInRenders' => true,
+```
+
+Edge backs this with a containment check: a response containing the signed-in user's email,
+username or full name is refused and logged with the field that matched (never the value).
+Treat that as a smoke alarm, not a proof. It cannot see:
+
+- customer-group or catalog pricing that differs per visitor,
+- an "edit this entry" link or other permission-gated markup,
+- elements returned to one visitor and not another.
+
+Verify before enabling: load a page signed in, fetch the same URL cookie-free, and diff.
+
 ### `islandsTemplatePath`
 `string`, default `'_edge/islands'`. The site-template folder that `edge/island?name=x`
 renders from. `{{ edgeIsland('cart') }}` -> renders `templates/_edge/islands/cart.twig` for
@@ -298,21 +336,43 @@ request is cached only if it survives all of them.
 5. Action request -> skip.
 6. Preview / live-preview request -> skip.
 7. Carries a token (`token` param, or `X-Craft-Token`) -> skip.
-8. A user is logged in -> skip **storing** (their live render is never persisted; the
-   edge tier still serves them the shared anonymous file when one exists).
+8. A user is logged in, and [`cacheLoggedInRenders`](#cacheloggedinrenders) is `false`
+   -> skip **storing** (their live render isn't persisted; the edge tier still serves them
+   the shared anonymous file when one exists).
 9. Environment not cacheable (see `cacheableEnvironments` / devMode) -> skip.
 10. A [bypass cookie](#bypasscookies) is present -> skip.
 11. Site ID is in `excludedSiteIds` -> skip.
 12. `?no-cache` param is present -> skip (a debugging aid: request any page with
     `?no-cache=1` to force a fresh render).
-13. URI is `edge` or under `edge/` -> skip (the plugin's own endpoints).
-14. URI matches `excludedUriPatterns` -> skip.
-15. `includedUriPatterns` is set and the URI doesn't match -> skip.
-16. Otherwise -> **cache**.
+13. The request `Host` doesn't match the site's configured base-URL host -> skip. The
+    stored file is keyed by the site's own host, but Craft renders absolute URLs from the
+    request `Host`, so storing a response that arrived on another host would write its URLs
+    into the canonical entry. Such requests still render normally, they're just never
+    stored. (Reject them at the edge too: see
+    [reverse proxy](reverse-proxy.md).)
+14. `queryStringCaching` is `ignore` and the request carries a query param that isn't in
+    [`excludedQueryStringParams`](#excludedquerystringparams) -> skip. In `ignore` mode the
+    query string is dropped from the cache key, so storing `/shop?brand=x` would write the
+    filtered page over the entry for plain `/shop`. Marketing params (`utm_*`, `gclid`, …)
+    are excluded from the key by design and still cache. Use `respect` mode if a param
+    should produce its own entry.
+15. URI is `edge` or under `edge/` -> skip (the plugin's own endpoints).
+16. URI matches `excludedUriPatterns` -> skip.
+17. `includedUriPatterns` is set and the URI doesn't match -> skip.
+18. Otherwise -> **cache**.
 
-And two response-side rules applied at store time: only a **200** response is stored, and a
-response that still carries **`Set-Cookie`** after the strip layer is never stored (logged
-and downgraded to `no-store`).
+Four response-side rules then apply at store time. A response is never stored if it:
+
+- isn't a **200**,
+- still carries **`Set-Cookie`** after the strip layer,
+- contains a **rendered CSRF token** (an input named after `csrfTokenName` with a non-empty
+  value) — see [templating](templating.md#forms--csrf-on-cached-pages),
+- contains the signed-in user's **email, username or full name**, when
+  [`cacheLoggedInRenders`](#cacheloggedinrenders) is on.
+
+Each is logged and the response is downgraded to `private, no-store`. In `devMode`,
+non-cacheable responses also carry an `X-Edge-Skip-Reason` header naming the rule that
+matched, so you can see why a page didn't cache without reading logs.
 
 Next: **[Templating for the cache](templating.md)**, the page that turns all of this into
 working templates.

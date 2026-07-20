@@ -116,15 +116,37 @@ Cookies in this bucket **never affect serving**:
 The session/CSRF cookie names come from your Craft config (`phpSessionName`,
 `csrfTokenName`), so a renamed session or CSRF cookie is still recognised as anonymous.
 
+> **One caveat on the guard.** Nothing in bucket 1 bypasses, because
+> [`bypassCookies`](configuration.md#bypasscookies) is empty by default. On top of that,
+> Edge hard-ignores the session and CSRF cookie names even if you *do* list them, so a
+> misconfiguration can't accidentally disable your cache for every returning visitor.
+> That hard-ignore list covers the session and CSRF cookies only, **not** Craft's identity
+> cookie: if you deliberately add it to `bypassCookies`, signed-in visitors will bypass.
+
 **Signed-in visitors get hits too.** The cached shell is anonymous and identical for
 everyone, so the edge serves it to a visitor carrying a login cookie exactly as it would
 to anyone else, and their account menu, cart, and CSRF tokens hydrate client-side from the
 uncached island endpoints ([the next section](#making-a-cached-page-personal-again)). The
 asymmetry that keeps this safe lives at the **origin**: while any visitor may be *served*
-the shared file, a logged-in render is never **stored**. If a signed-in visitor is the one
-who misses (no file yet), PHP renders their page live, marks it `private, no-store`, and
-persists nothing; the shared file is only ever written from an anonymous render (a real
-anonymous visitor, or the cookie-free warmer).
+the shared file, a logged-in render is not **stored** by default. If a signed-in visitor is
+the one who misses (no file yet), PHP renders their page live, marks it `private, no-store`,
+and persists nothing; the shared file is written from an anonymous render (a real anonymous
+visitor, or the cookie-free warmer).
+
+That default is deliberately conservative, because Edge cannot verify your templates. It
+does have a cost: if only signed-in staff browse a page, it never warms. When your shell
+really is identity-independent — every per-visitor fragment is an island, and nothing in
+the cacheable shell branches on `currentUser`, customer group, or permission-scoped element
+queries — you can set
+[`cacheLoggedInRenders`](configuration.md#cacheloggedinrenders) to `true` and let signed-in
+visits populate the cache like any other.
+
+Before you do, be clear about what Edge checks and what it doesn't. It refuses to store a
+response containing the signed-in user's email, username or full name, and logs which field
+matched. That catches the common leak — a greeting, an account link — and nothing more. It
+cannot see customer-group pricing, an "edit this entry" link, or an element that is visible
+to one visitor and not another. Prove it yourself first: load a page signed in, fetch the
+same URL cookie-free, and diff the two.
 
 ### Bucket 2: opt-in bypass cookies (bypass)
 

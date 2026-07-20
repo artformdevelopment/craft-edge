@@ -34,7 +34,7 @@ abstract class BaseDriver extends Component implements CacheDriverInterface
     /**
      * @inheritdoc
      */
-    public function prepareResponse(Response $response, bool $cacheable, array $tags = []): void
+    public function prepareResponse(Response $response, bool $cacheable, array $tags = [], ?string $skipReason = null): void
     {
         $headers = $response->getHeaders();
 
@@ -43,6 +43,12 @@ abstract class BaseDriver extends Component implements CacheDriverInterface
 
         if (!$cacheable) {
             $headers->set('Cache-Control', 'private, no-store');
+
+            // Why a page didn't cache is otherwise invisible. devMode only: skip reasons
+            // can name bypass cookies, which shouldn't be advertised in production.
+            if ($skipReason !== null && Craft::$app->getConfig()->getGeneral()->devMode) {
+                $headers->set('X-Edge-Skip-Reason', $skipReason);
+            }
 
             return;
         }
@@ -58,7 +64,13 @@ abstract class BaseDriver extends Component implements CacheDriverInterface
         // Never let Vary: Cookie (or Vary: *) fragment or disable the edge cache.
         $headers->remove('Vary');
 
-        $headers->set('Cache-Control', 'public, max-age=' . $this->getSettings()->cacheControlTtl);
+        // s-maxage governs the shared edge tier; max-age=0 keeps browsers revalidating.
+        // A purge can reach the edge but never a visitor's browser, so a long max-age
+        // would strand stale HTML on every device that had already seen the page.
+        $headers->set('Cache-Control', sprintf(
+            'public, s-maxage=%d, max-age=0, must-revalidate',
+            $this->getSettings()->cacheControlTtl,
+        ));
     }
 
     /**

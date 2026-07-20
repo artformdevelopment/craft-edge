@@ -69,6 +69,10 @@ class NginxController extends Controller
             $this->stdout("$line\n");
         }
 
+        foreach (Plugin::proxyWarnings() as $warning) {
+            $this->stdout("WARNING: $warning\n", Console::FG_YELLOW);
+        }
+
         $plugin->setLastVerifyResult($result);
         $this->stdout($result->ok ? "nginx verification PASSED.\n" : "nginx verification FAILED.\n", $result->ok ? Console::FG_GREEN : Console::FG_RED);
 

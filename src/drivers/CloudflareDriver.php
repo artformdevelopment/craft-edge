@@ -32,9 +32,9 @@ class CloudflareDriver extends BaseDriver
     /**
      * @inheritdoc
      */
-    public function prepareResponse(Response $response, bool $cacheable, array $tags = []): void
+    public function prepareResponse(Response $response, bool $cacheable, array $tags = [], ?string $skipReason = null): void
     {
-        parent::prepareResponse($response, $cacheable, $tags);
+        parent::prepareResponse($response, $cacheable, $tags, $skipReason);
 
         if ($cacheable && $this->getSettings()->cloudflareUsesCacheTags && !empty($tags)) {
             $sanitized = array_map([CloudflareRulesBuilder::class, 'sanitizeTag'], $tags);

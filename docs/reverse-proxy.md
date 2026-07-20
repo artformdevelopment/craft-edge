@@ -120,6 +120,52 @@ curl -H 'X-Forwarded-For: 203.0.113.9' https://example.com/some-uncached-page
 
 Under either correct recipe, `203.0.113.9` must not appear as the client address.
 
+## Apache origins: turn off h2c, or hydration breaks intermittently
+
+If your origin is Apache with `mod_http2` enabled, check this before anything else. Ubuntu
+and Debian ship `mods-available/http2.conf` containing:
+
+```apache
+Protocols h2 h2c http/1.1
+```
+
+Apache then answers plain HTTP requests with `Upgrade: h2,h2c` and `Connection: Upgrade`,
+inviting the client to switch protocols. nginx is not going to switch, but those headers
+break its **keepalive connection reuse**: the pooled connection is left in a state Apache
+closes, and the next request that reuses it comes back `200` with an **empty body**.
+
+The symptom is nasty because it is intermittent and silent. Full page loads mostly work
+(they are large and often get a fresh connection), while small JSON responses fail most of
+the time. In practice that means `edge/hydrate`, `edge/csrf` and Craft's own
+`actions/users/session-info` return nothing, so CSRF fields never get filled and every form
+on a cached page fails — while the page itself looks perfectly fine.
+
+Check for it directly:
+
+```bash
+apachectl -M | grep http2
+grep -rn "Protocols" /etc/apache2/
+for i in $(seq 1 10); do curl -s -o /dev/null -w '%{size_download} ' https://example.com/edge/csrf; done
+```
+
+A healthy origin returns the same non-zero size every time. If you see zeros, pin the
+backend vhost to HTTP/1.1 — it is behind nginx, so h2 buys it nothing:
+
+```apache
+<VirtualHost *:8080>
+    # nginx terminates TLS and proxies here over HTTP/1.1. Advertising h2c makes Apache
+    # answer with `Upgrade: h2,h2c` + `Connection: Upgrade`, which breaks nginx's
+    # keepalive connection reuse: reused connections come back with an empty body.
+    Protocols http/1.1
+    ...
+</VirtualHost>
+```
+
+Then `apachectl configtest && systemctl reload apache2`.
+
+The alternative — dropping `keepalive` from the nginx `upstream` — also stops the symptom,
+but costs a new TCP connection per request. Pinning the protocol is the better trade.
+
 ## Why Edge cares
 
 Two of Edge's guarantees depend on this being right:

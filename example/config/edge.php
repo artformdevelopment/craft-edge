@@ -76,7 +76,15 @@ return [
 
     // max-age for `Cache-Control: public, max-age=...` on cacheable responses.
     // Long by default: correctness comes from purging, not TTL expiry.
+    // Shared-cache TTL, sent as `s-maxage`. Browsers always get `max-age=0,
+    // must-revalidate`: a purge reaches the edge tier but never a visitor's browser.
     'cacheControlTtl' => 31536000,
+
+    // Signed-in visits warm the same shared page as anonymous ones. Safe here because
+    // every per-visitor fragment in this example is an island, so the shell never
+    // depends on who is looking at it. Edge additionally refuses to store a response
+    // containing the signed-in user's email, username or full name.
+    'cacheLoggedInRenders' => true,
 
     // Re-warm purged URLs automatically (queued WarmJob after each purge).
     'warmCacheAutomatically' => true,

@@ -2,7 +2,7 @@
 {% if currentUser %}
     <span>{{ currentUser.friendlyName }}</span>
     <form method="post" accept-charset="UTF-8">
-        <input type="hidden" name="{{ craft.app.config.general.csrfTokenName }}" value="{{ craft.app.request.csrfToken }}">
+        {{ edgeCsrfInput() }}
         <input type="hidden" name="action" value="users/logout">
         {{ redirectInput('/') }}
         <button type="submit">Log out</button>

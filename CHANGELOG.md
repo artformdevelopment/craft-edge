@@ -1,5 +1,24 @@
 # Release Notes for Edge
 
+## 1.4.1 - 2026-07-20
+
+### Added
+- `docs/reverse-proxy.md` documents the Apache h2c trap. With `mod_http2` enabled (the
+  Debian/Ubuntu default ships `Protocols h2 h2c http/1.1`), Apache answers plain HTTP with
+  `Upgrade: h2,h2c` + `Connection: Upgrade`, which breaks nginx keepalive reuse: reused
+  connections return `200` with an empty body. Small JSON responses fail most of the time
+  while full pages mostly succeed, so `edge/hydrate`, `edge/csrf` and Craft's own
+  `session-info` silently return nothing and every form on a cached page stops working.
+  Pin the backend vhost to `Protocols http/1.1`.
+
+### Changed
+- The bundled example app now reflects current behaviour: templates use
+  `{{ edgeCsrfInput() }}`, `config/edge.php` sets `cacheLoggedInRenders`,
+  `config/general.php` carries the correct `trustedHosts`/`ipHeaders` pairing, and the
+  nginx config gained the cache-key-aware bypass rule, a `/actions/` location and
+  browser revalidation on cache hits.
+
+
 ## 1.2.0 - 2026-07-20
 
 ### Added

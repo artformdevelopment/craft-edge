@@ -25,6 +25,13 @@ return GeneralConfig::create()
     ->loginPath(false)
     // Enable the Twig sandbox for system messages, etc.
     ->enableTwigSandbox()
+    // Behind a reverse proxy, tell Craft which forwarded headers to believe. nginx is
+    // the only ingress here and php-fpm sees the proxy in REMOTE_ADDR, so trust the
+    // proxy and let Craft resolve the client from X-Forwarded-For. Never pair
+    // trustedHosts(['any']) with ipHeaders: Yii reads the LEFTMOST X-Forwarded-For
+    // entry, which the client controls. See docs/reverse-proxy.md.
+    ->trustedHosts(['127.0.0.1', '::1'])
+    ->ipHeaders(['X-Forwarded-For', 'X-Real-IP'])
     // Set the @webroot alias so the clear-caches command knows where to find CP resources
     ->aliases([
         '@webroot' => dirname(__DIR__) . '/web',

@@ -35,7 +35,7 @@
         and fills it in, so a shared cached page can still carry a working form.
     </p>
     <form method="post" accept-charset="UTF-8" class="sign-in">
-        <input type="hidden" name="{{ craft.app.config.general.csrfTokenName }}" value="">
+        {{ edgeCsrfInput() }}
         <input type="hidden" name="action" value="users/login">
         {{ redirectInput('/') }}
         <label>Username <input type="text" name="loginName" autocomplete="username" required></label>

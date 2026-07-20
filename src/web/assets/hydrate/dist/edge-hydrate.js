@@ -8,6 +8,10 @@
  *
  * One round trip regardless of island count. A cache hit costs the origin one request,
  * not one per island plus one for the token.
+ *
+ * The token is cached for the page's lifetime, but the server can rotate it underneath us
+ * (signing in or out regenerates the session). Anything that submits must therefore be
+ * able to recover, which is what refresh() and post() are for.
  */
 (function() {
     'use strict';
@@ -103,6 +107,21 @@
         return hydratePromise;
     }
 
+    /**
+     * Discards the cached token and fetches a new one. Needed whenever the server may
+     * have rotated it: after signing in or out, or when a page comes back from bfcache
+     * having sat in a background tab.
+     */
+    function refresh(root) {
+        hydratePromise = null;
+
+        return hydrateOnce([]).then(function() {
+            applyCsrf(root || document, lastCsrf);
+
+            return lastCsrf;
+        });
+    }
+
     function swapIsland(el, html) {
         el.innerHTML = html;
         el.setAttribute('data-edge-hydrated', '1');
@@ -144,6 +163,60 @@
         });
     }
 
+    function looksLikeCsrfRejection(status, body) {
+        return status === 400 && /Unable to verify your data|CSRF/i.test(body || '');
+    }
+
+    /**
+     * POSTs with the visitor's current token and, if the server says the token is stale,
+     * fetches a fresh one and replays the request exactly once.
+     *
+     * A page can be open long enough for the session to rotate underneath it, so any
+     * mutation that isn't followed by a full page load should go through here.
+     */
+    function post(url, options) {
+        options = options || {};
+
+        return hydrateOnce([]).then(function() {
+            function send() {
+                var body = options.body;
+
+                if (lastCsrf && lastCsrf.token) {
+                    if (body instanceof FormData) {
+                        body.set(lastCsrf.param, lastCsrf.token);
+                    } else if (body instanceof URLSearchParams) {
+                        body.set(lastCsrf.param, lastCsrf.token);
+                    }
+                }
+
+                return fetch(url, {
+                    method: options.method || 'POST',
+                    body: body,
+                    credentials: 'same-origin',
+                    headers: options.headers || {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+            }
+
+            return send().then(function(response) {
+                if (response.status !== 400) {
+                    return response;
+                }
+
+                // Read a clone so the caller still gets an unconsumed body.
+                return response.clone().text().then(function(text) {
+                    if (!looksLikeCsrfRejection(response.status, text)) {
+                        return response;
+                    }
+
+                    return refresh(document).then(send);
+                });
+            });
+        });
+    }
+
     function run() {
         var els = islandElements();
         var names = els.map(function(el) {
@@ -179,6 +252,8 @@
     // For markup a site injects itself (modals, cart drawers, anything fetched later).
     window.EdgeCsrf = {
         apply: applyCsrf,
+        refresh: refresh,
+        post: post,
         ensure: function(root) {
             return hydrateOnce([]).then(function() {
                 applyCsrf(root, lastCsrf);
@@ -187,6 +262,14 @@
             });
         }
     };
+
+    // A page restored from bfcache kept its DOM, and its token may have been rotated in
+    // another tab meanwhile.
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            refresh(document);
+        }
+    });
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', run);

@@ -16,7 +16,9 @@ use Craft;
 use craft\base\Component;
 use craft\base\ElementInterface;
 use craft\db\Query;
+use craft\elements\Entry;
 use craft\elements\GlobalSet;
+use craft\helpers\Db;
 use craft\helpers\ElementHelper;
 use craft\helpers\Queue as QueueHelper;
 
@@ -39,6 +41,9 @@ class Invalidator extends Component
 
     /** Below this many URIs the precise path always wins, whatever the share. */
     private const COARSE_FLUSH_FLOOR = 50;
+
+    /** Watermark for the last status-transition sweep. */
+    private const TRANSITION_CACHE_KEY = 'edge:lastTransitionCheck';
 
     /** @var array<string, true> Craft cache tags buffered for this request */
     private array $tags = [];
@@ -252,6 +257,109 @@ class Invalidator extends Component
         }
 
         return $siteUris;
+    }
+
+    /**
+     * Catches up with content that changes status on its own -- a scheduled post going
+     * live, an entry expiring. Craft derives element status at query time and fires no
+     * event at that moment, so without this the page stays cached with the wrong content
+     * indefinitely. Run it on a schedule; it is two indexed lookups and usually a no-op.
+     *
+     * @return array{pages: int, elements: int}
+     */
+    public function refreshExpired(): array
+    {
+        return [
+            'pages' => $this->purgeExpiredPages(),
+            'elements' => $this->invalidateStatusTransitions(),
+        ];
+    }
+
+    /**
+     * Purges pages whose recorded expiry has passed. Covers an expiring element the page
+     * rendered, and the duration Craft recorded for a `{% cache %}` block.
+     */
+    private function purgeExpiredPages(): int
+    {
+        $rows = (new Query())
+            ->select(['id', 'siteId', 'uri'])
+            ->from(Table::CACHES)
+            ->where(['not', ['expiryDate' => null]])
+            ->andWhere(['<=', 'expiryDate', Db::prepareDateForDb(new \DateTime())])
+            ->all();
+
+        if (empty($rows)) {
+            return 0;
+        }
+
+        $siteUris = array_map(
+            fn(array $row) => new SiteUri((int)$row['siteId'], $row['uri']),
+            $rows,
+        );
+
+        $settings = Plugin::getInstance()->getSettings();
+
+        Craft::$app->getDb()->createCommand()
+            ->delete(Table::CACHES, ['id' => array_column($rows, 'id')])
+            ->execute();
+
+        $this->pushPurgeJobs($siteUris, $settings);
+        $this->pushWarmJobs($siteUris, $settings);
+
+        return count($siteUris);
+    }
+
+    /**
+     * Invalidates for elements that crossed their post or expiry date since the last run.
+     *
+     * A page never rendered a pending entry, so no per-page expiry can exist for one going
+     * live; resolution has to come from the query tags instead. Handing each element to
+     * Craft makes a status change take exactly the same path as a save.
+     */
+    private function invalidateStatusTransitions(): int
+    {
+        $now = new \DateTime();
+        $since = $this->lastTransitionCheck();
+
+        // The first run has no watermark; a short lookback avoids sweeping the archive.
+        $entries = Entry::find()
+            ->status(null)
+            ->siteId('*')
+            ->andWhere(['or',
+                ['and', ['>=', 'entries.postDate', Db::prepareDateForDb($since)], ['<', 'entries.postDate', Db::prepareDateForDb($now)]],
+                ['and', ['>=', 'entries.expiryDate', Db::prepareDateForDb($since)], ['<', 'entries.expiryDate', Db::prepareDateForDb($now)]],
+            ])
+            ->all();
+
+        Craft::$app->getCache()->set(self::TRANSITION_CACHE_KEY, $now->format(\DateTimeInterface::ATOM), 0);
+
+        foreach ($entries as $entry) {
+            Craft::$app->getElements()->invalidateCachesForElement($entry);
+        }
+
+        if (!empty($entries)) {
+            $this->flushBuffer();
+        }
+
+        return count($entries);
+    }
+
+    /**
+     * The watermark this run should catch up from.
+     */
+    private function lastTransitionCheck(): \DateTime
+    {
+        $stored = Craft::$app->getCache()->get(self::TRANSITION_CACHE_KEY);
+
+        if (is_string($stored)) {
+            try {
+                return new \DateTime($stored);
+            } catch (\Throwable) {
+                // Fall through to the default lookback.
+            }
+        }
+
+        return new \DateTime('-1 hour');
     }
 
     /**

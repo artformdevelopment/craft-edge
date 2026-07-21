@@ -12,6 +12,7 @@ use artformdev\edge\Plugin;
 use Craft;
 use craft\base\Component;
 use craft\base\Element;
+use craft\base\ExpirableElementInterface;
 use craft\db\Query;
 use craft\elements\db\ElementQuery;
 use craft\events\CancelableEvent;
@@ -42,6 +43,9 @@ class Generator extends Component
     /** @var array<string, true> */
     private array $tags = [];
 
+    /** Earliest moment a rendered element changes status on its own, if any. */
+    private ?\DateTimeInterface $expiryDate = null;
+
     /**
      * Starts tracking for a cacheable request.
      */
@@ -50,6 +54,7 @@ class Generator extends Component
         $this->siteUri = $siteUri;
         $this->elementIds = [];
         $this->tags = [];
+        $this->expiryDate = null;
 
         // A `{% cache %}` block that HITS never runs the element queries inside it, so the
         // populate/prepare events below see nothing and the page would be stored with an
@@ -111,6 +116,26 @@ class Generator extends Component
         }
 
         $this->elementIds[$element->id] = true;
+
+        // A pending or expiring element changes status with no save and no event behind it,
+        // so record when that is due; refresh-expired purges the page at that moment.
+        if ($element instanceof ExpirableElementInterface) {
+            $this->noteExpiryDate($element->getExpiryDate());
+        }
+    }
+
+    /**
+     * Keeps the earliest of the expiry dates seen during this render.
+     */
+    public function noteExpiryDate(?\DateTimeInterface $date): void
+    {
+        if ($date === null) {
+            return;
+        }
+
+        if ($this->expiryDate === null || $date < $this->expiryDate) {
+            $this->expiryDate = $date;
+        }
     }
 
     /**
@@ -127,7 +152,15 @@ class Generator extends Component
         }
 
         /** @var \yii\caching\TagDependency|null $dependency */
-        [$dependency] = $elements->stopCollectingCacheInfo();
+        [$dependency, $duration] = $elements->stopCollectingCacheInfo();
+
+        // Craft floors this at the `cacheDuration` config setting, so only a shorter value
+        // means an element is genuinely due to change status. This is what carries the
+        // expiry of a `{% cache %}` block that was served from cache.
+        $cacheDuration = Craft::$app->getConfig()->getGeneral()->cacheDuration;
+        if ($duration && (!$cacheDuration || $duration < $cacheDuration)) {
+            $this->noteExpiryDate(new \DateTime("+$duration seconds"));
+        }
 
         foreach ($dependency->tags ?? [] as $tag) {
             // As in trackElementQuery(): too broad to store, handled by a coarse flush.
@@ -245,7 +278,12 @@ class Generator extends Component
             return;
         }
 
-        $this->saveDependencies($siteUri, array_keys($this->elementIds), array_keys($this->tags));
+        $this->saveDependencies(
+            $siteUri,
+            array_keys($this->elementIds),
+            array_keys($this->tags),
+            $this->expiryDate,
+        );
     }
 
     /**
@@ -324,8 +362,12 @@ class Generator extends Component
      * @param int[] $elementIds
      * @param string[] $tags
      */
-    public function saveDependencies(SiteUri $siteUri, array $elementIds, array $tags): void
-    {
+    public function saveDependencies(
+        SiteUri $siteUri,
+        array $elementIds,
+        array $tags,
+        ?\DateTimeInterface $expiryDate = null,
+    ): void {
         $db = Craft::$app->getDb();
 
         $cacheId = (new Query())
@@ -334,16 +376,20 @@ class Generator extends Component
             ->where(['siteId' => $siteUri->siteId, 'uri' => $siteUri->uri])
             ->scalar();
 
+        $expiry = $expiryDate !== null ? Db::prepareDateForDb($expiryDate) : null;
+
         if (!$cacheId) {
             $db->createCommand()->insert(Table::CACHES, [
                 'siteId' => $siteUri->siteId,
                 'uri' => $siteUri->uri,
                 'dateCached' => Db::prepareDateForDb(new \DateTime()),
+                'expiryDate' => $expiry,
             ])->execute();
             $cacheId = (int)$db->getLastInsertID();
         } else {
             $db->createCommand()->update(Table::CACHES, [
                 'dateCached' => Db::prepareDateForDb(new \DateTime()),
+                'expiryDate' => $expiry,
             ], ['id' => $cacheId])->execute();
         }
 

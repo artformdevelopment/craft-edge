@@ -35,6 +35,7 @@ use craft\events\RegisterComponentTypesEvent;
 use craft\events\RegisterUrlRulesEvent;
 use craft\services\Elements;
 use craft\services\Plugins;
+use craft\services\ProjectConfig;
 use craft\services\Structures;
 use craft\services\Utilities;
 use craft\utilities\ClearCaches;
@@ -58,7 +59,7 @@ class Plugin extends \craft\base\Plugin
     /**
      * @inheritdoc
      */
-    public string $schemaVersion = '1.0.0';
+    public string $schemaVersion = '1.1.0';
 
     /**
      * @inheritdoc
@@ -330,6 +331,15 @@ class Plugin extends \craft\base\Plugin
      */
     private function registerCoarseFlushEvents(): void
     {
+        // Fields, entry types, sections and site settings all change rendered output while
+        // touching no element, so nothing else here fires. Only applied changes reach this,
+        // so a deploy with no config drift costs nothing.
+        Event::on(ProjectConfig::class, ProjectConfig::EVENT_AFTER_APPLY_CHANGES,
+            function() {
+                $this->invalidator->requestCoarseFlush('project config changes applied');
+            }
+        );
+
         Event::on(Plugins::class, Plugins::EVENT_AFTER_SAVE_PLUGIN_SETTINGS,
             function(PluginEvent $event) {
                 $this->invalidator->requestCoarseFlush("plugin settings saved ({$event->plugin->handle})");

@@ -155,6 +155,29 @@ class CacheController extends Controller
         return ExitCode::OK;
     }
 
+    /**
+     * Purges pages whose content is due to change on its own: a scheduled post going live,
+     * an entry expiring. Craft fires no event at that moment, so run this on a schedule
+     * (a every-minute cron is fine -- it is one indexed lookup and usually a no-op).
+     */
+    public function actionRefreshExpired(): int
+    {
+        ['pages' => $pages, 'elements' => $elements] = Plugin::getInstance()->invalidator->refreshExpired();
+
+        if ($pages === 0 && $elements === 0) {
+            $this->stdout("Nothing has changed status.\n");
+
+            return ExitCode::OK;
+        }
+
+        $this->stdout(
+            "Refreshed $pages expired page(s) and $elements element(s) that changed status.\n",
+            Console::FG_GREEN,
+        );
+
+        return ExitCode::OK;
+    }
+
     private function findSiteUri(string $url): ?SiteUri
     {
         $path = trim((string)parse_url($url, PHP_URL_PATH), '/');

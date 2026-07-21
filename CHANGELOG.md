@@ -1,5 +1,18 @@
 # Release Notes for Edge
 
+## 1.4.3 - 2026-07-21
+
+### Added
+- `edge/cache/refresh-expired` purges pages whose content changed status on its own: a
+  scheduled post going live, an entry expiring. Craft fires no event at those moments, so
+  run this on a schedule (a per-minute cron is fine — it is two indexed lookups).
+
+### Fixed
+- Project config changes (fields, entry types, sections, site settings) now invalidate.
+
+### Changed
+- `edge_caches` gains an `expiryDate` column; the schema version is now 1.1.0.
+
 ## 1.4.2 - 2026-07-21
 
 ### Fixed

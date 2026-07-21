@@ -105,11 +105,16 @@ Symptom: an editor saved, but the page still shows old content.
    If a listing isn't purging for new entries, the listing template may build its query in a
    way that doesn't expose section tags (e.g. a hand-built raw query). Prefer
    `craft.entries.section(...)` element queries so Craft's cache tags are recorded.
-3. **Template/data change, not a content change?** Edge can't detect those: see
+3. **Scheduled post didn't appear, or an expired entry won't go away?** Nobody saved
+   anything, so no event fired. That gap is closed by
+   [the refresh task](installation.md#schedule-the-refresh-task-required) —
+   check it is actually scheduled and that `./craft edge/cache/refresh-expired` runs clean
+   by hand. This is the most common cause when the content changed "by itself".
+4. **Template/data change, not a content change?** Edge can't detect those: see
    [what Edge cannot detect](invalidation.md#what-edge-cannot-detect). Clear the cache.
-4. **Global set change didn't clear enough / cleared everything?** Global sets trigger a
+5. **Global set change didn't clear enough / cleared everything?** Global sets trigger a
    [coarse flush](invalidation.md#coarse-flushes) by design; that's expected.
-5. **Frozen "now"/relative time?** That's [render-time freezing](templating.md#what-counts-as-per-visitor),
+6. **Frozen "now"/relative time?** That's [render-time freezing](templating.md#what-counts-as-per-visitor),
    not staleness. Make it client-side.
 
 ## Forms are rejected / CSRF errors

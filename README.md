@@ -63,6 +63,13 @@ cp vendor/artformdev/craft-edge/config/edge.php config/edge.php
 ./craft edge/nginx/verify --url=https://your-site.test/   # (or edge/cloudflare/verify)
 ```
 
+Then schedule the refresh task, so scheduled posts and expiring entries reach the cache —
+Craft fires no event when a date passes, so nothing else notices:
+
+```cron
+* * * * * cd /path/to/your/project && ./craft edge/cache/refresh-expired
+```
+
 Full walkthrough: **[Installation](docs/installation.md)**.
 
 ## Documentation

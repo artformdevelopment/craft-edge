@@ -161,6 +161,28 @@ Edge never lets non-live content pollute or purge the live cache:
 - **Preview and token requests are never cached** in the first place (they're bypassed at
   the [decision stage](configuration.md#the-full-decision-order)).
 
+## Scheduled status changes
+
+A save is not the only way content changes. An entry with a future **Post Date** becomes
+live on its own; one with an **Expiry Date** stops being live. Craft derives status when a
+query runs, so at that moment nothing is saved and no event fires — the two maps above
+have nothing to react to.
+
+Edge handles this from the other end, which is why
+[the refresh task](installation.md#schedule-the-refresh-task-required) is required:
+
+- While rendering, Edge records the **earliest** moment any element on the page is due to
+  change status, in `edge_caches.expiryDate`.
+- `edge/cache/refresh-expired` purges pages whose recorded moment has passed, and separately
+  picks up elements that crossed a post or expiry date since its last run, handing each to
+  Craft so it takes exactly the same path as a save.
+
+The second half is what catches a scheduled post going live: a page never rendered a
+pending entry, so it holds no dependency on one, and only the query tags can resolve it.
+
+Without the task scheduled, a scheduled post never appears and an expired entry never
+disappears — on those pages, until something else purges them.
+
 ## What Edge cannot detect
 
 Edge tracks **content** changes via Craft's element system. It cannot know about changes

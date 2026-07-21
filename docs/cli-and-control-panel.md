@@ -41,8 +41,18 @@ Queues requests for **every live element URL** (all entries and categories with 
 across all sites), building the cache from scratch. Ideal right after a full clear or a
 deploy: `./craft edge/cache/clear && ./craft edge/cache/generate && ./craft queue/run`.
 
-> `warm` and `generate` **queue** jobs; they don't do the work synchronously. Make sure the
-> queue runs (`./craft queue/run`, or a queue daemon) afterwards.
+```bash
+./craft edge/cache/refresh-expired
+```
+Catches up with content that changed status with nobody touching it: a scheduled post going
+live, an entry passing its expiry date. Craft fires no event at those moments, so this is
+the only thing that notices. **Put it on a schedule** — see
+[Installation](installation.md#schedule-the-refresh-task-required). Two indexed lookups and
+a no-op almost every time, so a per-minute cron is fine.
+
+> `warm`, `generate` and `refresh-expired` **queue** jobs; they don't do the work
+> synchronously. Make sure the queue runs (`./craft queue/run`, or a queue daemon)
+> afterwards.
 
 ### Verification
 

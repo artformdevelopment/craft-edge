@@ -121,12 +121,32 @@ curl -sSI https://your-site.test/ | grep -i -E 'x-edge|cache-control|set-cookie'
 If verification fails, the output tells you what's wrong (usually the nginx config isn't
 in place or the `cachePath` doesn't match). Head to [Troubleshooting](troubleshooting.md).
 
+## Schedule the refresh task (required)
+
+Some content changes with nobody touching it: an entry with a future **Post Date** goes
+live, an entry with an **Expiry Date** stops being live. Craft works status out when a
+query runs, so nothing is saved and no event fires at that moment — there is nothing for
+Edge to react to, and the cached page would keep the old content indefinitely.
+
+One scheduled command closes that gap:
+
+```cron
+* * * * * cd /path/to/your/project && ./craft edge/cache/refresh-expired
+```
+
+Run it as the same user as your other Craft cron jobs. It is two indexed lookups and a
+no-op almost every time, so a per-minute schedule is cheap; the interval you choose is the
+longest a scheduled post can be late.
+
+Skip this only if you never use Post Dates or Expiry Dates.
+
 ## What Edge added to your project
 
 So you know what's there:
 
-- **Three database tables**: `edge_caches` (one row per cached URL), `edge_cache_elements`
-  and `edge_cache_tags` (the dependency maps). Removed cleanly if you uninstall.
+- **Three database tables**: `edge_caches` (one row per cached URL, with the date it is
+  next due to change status) and `edge_cache_elements` / `edge_cache_tags` (the dependency
+  maps). Removed cleanly if you uninstall.
 - **Two front-end routes**: `edge/csrf` and `edge/island`, used by the hydration script.
   Both are always `private, no-store`.
 - **A Twig function**: `{{ edgeIsland('name') }}`, for personalized fragments.

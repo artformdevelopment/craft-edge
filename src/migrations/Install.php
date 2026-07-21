@@ -25,6 +25,7 @@ class Install extends Migration
                 'siteId' => $this->integer()->notNull(),
                 'uri' => $this->string(500)->notNull(),
                 'dateCached' => $this->dateTime(),
+                'expiryDate' => $this->dateTime()->null(),
             ]);
         }
 
@@ -46,6 +47,7 @@ class Install extends Migration
 
         $uriColumn = $this->db->getIsPgsql() ? 'LEFT([[uri]], 255)' : 'uri(255)';
         $this->createIndex(null, Table::CACHES, ['siteId', $uriColumn]);
+        $this->createIndex(null, Table::CACHES, 'expiryDate');
         $this->createIndex(null, Table::CACHE_ELEMENTS, 'elementId');
         $this->createIndex(null, Table::CACHE_TAGS, 'tag');
 

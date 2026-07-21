@@ -27,6 +27,13 @@ use craft\helpers\Queue as QueueHelper;
  */
 class Invalidator extends Component
 {
+    /**
+     * Commerce is optional, so it is referenced by name only: nothing here loads a
+     * Commerce class or assumes the plugin is installed.
+     */
+    private const COMMERCE_PRICING_JOB = 'craft\commerce\queue\jobs\CatalogPricing';
+    private const COMMERCE_PRICING_QUEUE_TABLE = '{{%commerce_catalogpricing_queue}}';
+
     /** @var array<string, true> Craft cache tags buffered for this request */
     private array $tags = [];
 
@@ -277,8 +284,64 @@ class Invalidator extends Component
     }
 
     /**
+     * Commerce regenerates catalog prices in a queue job WITHOUT saving the purchasable
+     * elements, so no element event fires and no page is ever invalidated: a promotion
+     * that starts, changes or ends leaves every cached price stale.
+     *
+     * Purchasable-scoped work is already covered by the element save that queued it.
+     * Rule-scoped work can reprice any part of the catalog, and Commerce deletes the
+     * superseded rows rather than stamping them, so there is nothing to resolve against
+     * -> flush the tier, as with global sets.
+     *
+     * Called at the queue's BEFORE_EXEC: Commerce consumes its own queue row inside the
+     * job, so by AFTER_EXEC the scope is gone.
+     */
+    public function handleCatalogPricingJob(mixed $job): void
+    {
+        if (!is_object($job) || $job::class !== self::COMMERCE_PRICING_JOB) {
+            return;
+        }
+
+        // Commerce < 5.7 puts the scope on the job itself.
+        if (!empty($job->catalogPricingRuleIds ?? null)) {
+            $this->requestCoarseFlush('commerce catalog pricing rules changed');
+
+            return;
+        }
+
+        if (!empty($job->purchasableIds ?? null)) {
+            return;
+        }
+
+        // Commerce >= 5.7 consolidates: the scope lives in its own queue table, and
+        // purchasable and rule work are always queued as separate rows.
+        if ($this->commercePricingRuleWorkPending()) {
+            $this->requestCoarseFlush('commerce catalog pricing rules changed');
+        }
+    }
+
+    /**
+     * Whether Commerce has rule-scoped repricing queued. An unreadable table means an
+     * unrecognised Commerce version, in which case the job regenerates everything.
+     */
+    private function commercePricingRuleWorkPending(): bool
+    {
+        try {
+            return (new Query())
+                ->from(self::COMMERCE_PRICING_QUEUE_TABLE)
+                ->where(['type' => 'rule'])
+                ->exists();
+        } catch (\Throwable) {
+            return true;
+        }
+    }
+
+    /**
      * Registers a one-time end-of-request hook so all changes from a single request
      * are resolved and dispatched together (and the save returns before any purge).
+     *
+     * Queue workers are long-lived and never reach this event between jobs; Plugin also
+     * flushes after every job so buffered changes are not stranded there.
      */
     private function registerFlush(): void
     {
@@ -289,7 +352,6 @@ class Invalidator extends Component
         $this->flushRegistered = true;
 
         Craft::$app->on(\yii\base\Application::EVENT_AFTER_REQUEST, function() {
-            $this->flushRegistered = false;
             $this->flushBuffer();
         });
     }

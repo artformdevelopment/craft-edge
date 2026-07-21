@@ -51,6 +51,13 @@ class Generator extends Component
         $this->elementIds = [];
         $this->tags = [];
 
+        // A `{% cache %}` block that HITS never runs the element queries inside it, so the
+        // populate/prepare events below see nothing and the page would be stored with an
+        // incomplete dependency set -- permanently stale for that content. Craft re-registers
+        // a hit block's tags, but only while someone is collecting, so collect for the whole
+        // render. Nested collections (a `{% cache %}` MISS) merge outward into this one.
+        Craft::$app->getElements()->startCollectingCacheInfo();
+
         Event::on(ElementQuery::class, ElementQuery::EVENT_AFTER_POPULATE_ELEMENT,
             function(PopulateElementEvent $event) {
                 if ($event->element instanceof Element) {
@@ -107,6 +114,31 @@ class Generator extends Component
     }
 
     /**
+     * Folds the tags Craft collected for this render into the tracked set. This is what
+     * carries the dependencies of a `{% cache %}` block that was served from cache, whose
+     * element queries never ran.
+     */
+    private function collectTemplateCacheTags(): void
+    {
+        $elements = Craft::$app->getElements();
+
+        if (!$elements->getIsCollectingCacheInfo()) {
+            return;
+        }
+
+        /** @var \yii\caching\TagDependency|null $dependency */
+        [$dependency] = $elements->stopCollectingCacheInfo();
+
+        foreach ($dependency->tags ?? [] as $tag) {
+            // As in trackElementQuery(): too broad to store, handled by a coarse flush.
+            if ($tag === 'element') {
+                continue;
+            }
+            $this->tags[$tag] = true;
+        }
+    }
+
+    /**
      * Records an element query the page ran, via Craft's own cache tags.
      */
     public function trackElementQuery(ElementQuery $query): void
@@ -145,6 +177,10 @@ class Generator extends Component
         if (!$this->getIsTracking()) {
             return;
         }
+
+        // Close the collection opened in start() before anything below can return early,
+        // so it is never left open for the next render.
+        $this->collectTemplateCacheTags();
 
         $siteUri = $this->siteUri;
         $plugin = Plugin::getInstance();

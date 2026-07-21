@@ -41,6 +41,8 @@ use craft\utilities\ClearCaches;
 use craft\web\Application as WebApplication;
 use craft\web\UrlManager;
 use yii\base\Event;
+use yii\queue\ExecEvent;
+use yii\queue\Queue;
 use yii\web\Response;
 
 /**
@@ -87,6 +89,7 @@ class Plugin extends \craft\base\Plugin
         parent::init();
 
         $this->registerElementEvents();
+        $this->registerQueueEvents();
         $this->registerCoarseFlushEvents();
         $this->registerCpComponents();
 
@@ -294,6 +297,32 @@ class Plugin extends \craft\base\Plugin
                 $this->invalidator->addElement($event->element);
             }
         );
+    }
+
+    /**
+     * Queue workers run jobs in a long-lived loop, so `Application::EVENT_AFTER_REQUEST`
+     * (where the invalidation buffer is normally resolved) does not fire between jobs.
+     * Anything that saves elements from a job -- bulk resaves, `resave --queue`, content
+     * syncs, propagation -- would otherwise buffer its changes and never dispatch them.
+     *
+     * Bound to the base queue class so a swapped-in queue driver is still covered.
+     */
+    private function registerQueueEvents(): void
+    {
+        Event::on(Queue::class, Queue::EVENT_BEFORE_EXEC,
+            function(ExecEvent $event) {
+                $this->invalidator->handleCatalogPricingJob($event->job);
+            }
+        );
+
+        // A failed job may still have saved elements before it threw.
+        foreach ([Queue::EVENT_AFTER_EXEC, Queue::EVENT_AFTER_ERROR] as $eventName) {
+            Event::on(Queue::class, $eventName,
+                function() {
+                    $this->invalidator->flushBuffer();
+                }
+            );
+        }
     }
 
     /**

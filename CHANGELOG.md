@@ -1,5 +1,18 @@
 # Release Notes for Edge
 
+## 1.4.2 - 2026-07-21
+
+### Fixed
+- Content inside a `{% cache %}` block is now tracked, so pages using the tag invalidate.
+- Invalidation triggered inside a queue job is no longer discarded.
+- Pricing change invalidation for Commerce catalog pricing rules.
+- End-of-request flush handlers no longer accumulate in long-lived queue workers.
+
+### Changed
+- Pages whose `{% cache %}` blocks run unscoped element queries now invalidate more widely,
+  because those dependencies are recorded for the first time. Scope the queries to narrow it.
+
+
 ## 1.4.1 - 2026-07-20
 
 ### Added

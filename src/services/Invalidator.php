@@ -34,6 +34,12 @@ class Invalidator extends Component
     private const COMMERCE_PRICING_JOB = 'craft\commerce\queue\jobs\CatalogPricing';
     private const COMMERCE_PRICING_QUEUE_TABLE = '{{%commerce_catalogpricing_queue}}';
 
+    /** Resolved sets at or above this share of the tier are flushed wholesale instead. */
+    private const COARSE_FLUSH_SHARE = 0.5;
+
+    /** Below this many URIs the precise path always wins, whatever the share. */
+    private const COARSE_FLUSH_FLOOR = 50;
+
     /** @var array<string, true> Craft cache tags buffered for this request */
     private array $tags = [];
 
@@ -127,18 +133,7 @@ class Invalidator extends Component
             $this->tags = [];
             $this->elementIds = [];
             $this->coarseFlush = false;
-
-            $allUris = $this->getAllCachedSiteUris();
-            Craft::$app->getDb()->createCommand()->delete(Table::CACHES)->execute();
-
-            // ponytail: ngx_cache_purge wildcard purges need a nonstandard build, so the
-            // fastcgi driver also purges every known URI individually on a coarse flush.
-            if ($settings->driver === Settings::DRIVER_NGINX_FASTCGI) {
-                $this->pushPurgeJobs($allUris, $settings);
-            }
-
-            QueueHelper::push(new PurgeJob(purgeAll: true), priority: 100);
-            $this->pushWarmJobs($settings->warmCacheAutomatically ? $allUris : [], $settings);
+            $this->flushEverything($settings);
 
             return;
         }
@@ -155,6 +150,16 @@ class Invalidator extends Component
             return;
         }
 
+        // A page whose `{% cache %}` block runs an unscoped element query depends on every
+        // element of that type ("element::<class>::*"), which Craft fires on every save of
+        // that type -- so one edit can resolve to most of the tier. The purge scope is the
+        // same either way; doing it as one flush avoids thousands of purge and warm jobs.
+        if ($this->isMostOfTier(count($siteUris))) {
+            $this->flushEverything($settings);
+
+            return;
+        }
+
         // Remove the DB rows now (idempotent; pages re-register on next render).
         $cacheIds = array_keys($siteUris);
         Craft::$app->getDb()->createCommand()->delete(Table::CACHES, ['id' => $cacheIds])->execute();
@@ -163,6 +168,42 @@ class Invalidator extends Component
         $uris = array_values($siteUris);
         $this->pushPurgeJobs($uris, $settings);
         $this->pushWarmJobs($uris, $settings);
+    }
+
+    /**
+     * Purges and re-warms the whole managed tier.
+     */
+    private function flushEverything(Settings $settings): void
+    {
+        $allUris = $this->getAllCachedSiteUris();
+        Craft::$app->getDb()->createCommand()->delete(Table::CACHES)->execute();
+
+        // ponytail: ngx_cache_purge wildcard purges need a nonstandard build, so the
+        // fastcgi driver also purges every known URI individually on a coarse flush.
+        if ($settings->driver === Settings::DRIVER_NGINX_FASTCGI) {
+            $this->pushPurgeJobs($allUris, $settings);
+        }
+
+        QueueHelper::push(new PurgeJob(purgeAll: true), priority: 100);
+        $this->pushWarmJobs($settings->warmCacheAutomatically ? $allUris : [], $settings);
+    }
+
+    /**
+     * Whether a resolved set is a large enough share of the tier that flushing it wholesale
+     * is cheaper than purging each URI.
+     *
+     * ponytail: a fixed share, not a setting. The floor keeps small sites (where "half the
+     * tier" is a handful of pages) on the precise path.
+     */
+    private function isMostOfTier(int $count): bool
+    {
+        if ($count < self::COARSE_FLUSH_FLOOR) {
+            return false;
+        }
+
+        $total = (int)(new Query())->from(Table::CACHES)->count();
+
+        return $total > 0 && $count >= (int)ceil($total * self::COARSE_FLUSH_SHARE);
     }
 
     /**
@@ -298,7 +339,11 @@ class Invalidator extends Component
      */
     public function handleCatalogPricingJob(mixed $job): void
     {
-        if (!is_object($job) || $job::class !== self::COMMERCE_PRICING_JOB) {
+        // Held in a variable so this resolves at runtime: Commerce is not a dependency of
+        // this plugin, so the class legitimately does not exist in most installs.
+        $pricingJob = self::COMMERCE_PRICING_JOB;
+
+        if (!$job instanceof $pricingJob) {
             return;
         }
 

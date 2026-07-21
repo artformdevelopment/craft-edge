@@ -5,3 +5,9 @@ parameters:
     level: 4
     paths:
         - src
+    ignoreErrors:
+        # Commerce is an optional integration and deliberately not a dependency, so its
+        # classes are unresolvable here. The code guards every access with instanceof.
+        -
+            message: '#unknown class craft\\commerce\\#'
+            path: src/services/Invalidator.php

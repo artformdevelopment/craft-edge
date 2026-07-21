@@ -11,6 +11,9 @@
 ### Changed
 - Pages whose `{% cache %}` blocks run unscoped element queries now invalidate more widely,
   because those dependencies are recorded for the first time. Scope the queries to narrow it.
+- A change resolving to at least half the cached tier is flushed wholesale rather than as
+  thousands of individual purge and warm jobs. Same purge scope, one job.
+- `configWarnings()` documented its return type as the verify result; corrected to `string[]`.
 
 
 ## 1.4.1 - 2026-07-20

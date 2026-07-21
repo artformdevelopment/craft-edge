@@ -119,7 +119,7 @@ class Plugin extends \craft\base\Plugin
     }
 
     /**
-     * @return array{ok: bool, lines: string[], driver: string, date: string}|null
+     * @return string[]
      */
     public static function configWarnings(): array
     {

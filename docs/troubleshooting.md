@@ -8,6 +8,7 @@ the headers Edge leaves behind. Most problems fall into three buckets: *it's not
 - [It's not caching](#its-not-caching)
 - [It cached something it shouldn't have](#it-cached-something-it-shouldnt-have)
 - [Stale pages after an edit](#stale-pages-after-an-edit)
+- [Failed or delayed warming jobs](#failed-or-delayed-warming-jobs)
 - [Forms are rejected / CSRF errors](#forms-are-rejected--csrf-errors)
 - [Islands don't appear](#islands-dont-appear)
 - [Cloudflare-specific](#cloudflare-specific)
@@ -116,6 +117,33 @@ Symptom: an editor saved, but the page still shows old content.
    [coarse flush](invalidation.md#coarse-flushes) by design; that's expected.
 6. **Frozen "now"/relative time?** That's [render-time freezing](templating.md#what-counts-as-per-visitor),
    not staleness. Make it client-side.
+
+## Failed or delayed warming jobs
+
+A failed warm means some pages have not been pre-populated. Visitors can still render
+those pages dynamically; check purge failures separately if content is stale.
+
+1. **Read the job error and Craft logs.** Redirects and HTTP errors are not successful
+   warming. Check the site's base URL, routing, availability and response status. Resolve
+   those errors before retrying.
+2. **Check whether the jobs are eligible to run.** Automatic warm jobs have a short delay
+   and run behind normal Craft work. A busy queue can delay warming while higher-priority
+   jobs continue normally.
+3. **Check pending work.** `edge_warm_requests.lastError` records failed requests;
+   `leaseUntil` records active claims. Claims expire after 120 seconds. An expired claim
+   can be reclaimed when its job is retried; expiry alone does not start a worker.
+4. **Retry the affected jobs.** Successful URLs have already been removed from the work
+   list. Re-running `edge/cache/warm` or `edge/cache/generate` also requeues failed requests
+   for the URLs that command includes. Choose the affected jobs rather than retrying
+   unrelated queue failures.
+5. **Verify the result.** An HTTP 200 means the fetch succeeded, not necessarily that a
+   page was cached. Run the [verification command](cli-and-control-panel.md#verification)
+   and check its cache HIT and cookie results.
+
+If an execution exceeds its 300-second allowance, inspect origin response times, database
+or mutex waits, and the queue runner's termination settings. Warming batches are bounded;
+increasing concurrency can add origin pressure, and increasing a timeout does not resolve
+the underlying delay. See [warming scheduling](invalidation.md#requests-and-queue-scheduling).
 
 ## Forms are rejected / CSRF errors
 

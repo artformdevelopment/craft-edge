@@ -9,6 +9,7 @@ and that you'll pick a driver.
 - [Pick a driver](#pick-a-driver)
 - [The config file](#the-config-file)
 - [First cache hit](#first-cache-hit)
+- [Updating and rolling back](#updating-and-rolling-back)
 - [What Edge added to your project](#what-edge-added-to-your-project)
 
 ## Requirements
@@ -34,8 +35,9 @@ composer require artformdev/craft-edge
 
 That's the whole install. Installing the plugin:
 
-- creates three small database tables (`edge_caches`, `edge_cache_elements`,
-  `edge_cache_tags`) that hold the [dependency maps](how-it-works.md#the-two-dependency-maps);
+- creates the [dependency tables](how-it-works.md#the-two-dependency-maps)
+  (`edge_caches`, `edge_cache_elements`, `edge_cache_tags`) and the pending warming work
+  table (`edge_warm_requests`);
 - registers the **Utilities -> Edge Cache** panel, the `edge/*` console commands, and the
   `edge/csrf` + `edge/island` endpoints.
 
@@ -140,13 +142,23 @@ longest a scheduled post can be late.
 
 Skip this only if you never use Post Dates or Expiry Dates.
 
+## Updating and rolling back
+
+Stop queue workers gracefully and back up the database before updating the plugin. Install
+the package version, apply Craft's pending plugin migrations, then restart the workers.
+This keeps workers from processing jobs against a different code or schema version.
+
+When rolling back, preserve pending queue payloads and `edge_warm_requests` together. A
+plugin version must understand the jobs it is asked to execute; do not drop the work table
+while warming jobs still reference it. Plan queue recovery before downgrading code.
+
 ## What Edge added to your project
 
 So you know what's there:
 
-- **Three database tables**: `edge_caches` (one row per cached URL, with the date it is
-  next due to change status) and `edge_cache_elements` / `edge_cache_tags` (the dependency
-  maps). Removed cleanly if you uninstall.
+- **Four database tables**: `edge_caches` (one row per cached URL, with the date it is
+  next due to change status), `edge_cache_elements` / `edge_cache_tags` (the dependency
+  maps), and `edge_warm_requests` (pending warming work). Removed when you uninstall.
 - **Two front-end routes**: `edge/csrf` and `edge/island`, used by the hydration script.
   Both are always `private, no-store`.
 - **A Twig function**: `{{ edgeIsland('name') }}`, for personalized fragments.

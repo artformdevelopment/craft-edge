@@ -49,6 +49,7 @@ use yii\web\Response;
 /**
  * @property-read Cacheability $cacheability
  * @property-read Generator $generator
+ * @property-read \artformdev\edge\services\Warmer $warmer
  * @property-read Invalidator $invalidator
  * @method Settings getSettings()
  */
@@ -59,7 +60,7 @@ class Plugin extends \craft\base\Plugin
     /**
      * @inheritdoc
      */
-    public string $schemaVersion = '1.1.0';
+    public string $schemaVersion = '1.2.0';
 
     /**
      * @inheritdoc
@@ -78,6 +79,7 @@ class Plugin extends \craft\base\Plugin
                 'cacheability' => Cacheability::class,
                 'generator' => Generator::class,
                 'invalidator' => Invalidator::class,
+                'warmer' => \artformdev\edge\services\Warmer::class,
             ],
         ];
     }

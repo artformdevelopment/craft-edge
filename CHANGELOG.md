@@ -1,5 +1,13 @@
 # Release Notes for Edge
 
+## 1.4.4 - 2026-10-30
+
+### Fixed
+- Cache warming now uses bounded, lower-priority jobs and a durable deduplicated work list.
+- Invalidations arriving during warming are preserved and followed by a fresh purge/warm.
+- Redirects and HTTP failures are reported instead of counted as successful warming.
+- Existing serialized warming jobs remain compatible. Schema version is now 1.2.0.
+
 ## 1.4.3 - 2026-07-21
 
 ### Added

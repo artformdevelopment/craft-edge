@@ -268,14 +268,19 @@ answered by the tier.
 ## Warming & hydration
 
 ### `warmCacheAutomatically`
-`bool`, default `true`. After purging a set of URLs, queue a **warm** job that re-requests
+`bool`, default `true`. After purging a set of URLs, queue **warming** jobs that re-request
 them (cookie-free, anonymous) so the next real visitor gets a hit instead of paying for the
 re-render. Turn it off if you'd rather let traffic re-populate the cache lazily (lower
-origin load right after big edits, at the cost of some misses).
+origin load right after big edits, at the cost of some misses). Manual `warm` and `generate`
+commands remain available. See [Warming](invalidation.md#warming) for how pending work is
+shared and scheduled.
 
 ### `concurrency`
 `int`, default `5`. How many URLs the warmer requests in parallel. Raise it to warm large
-purges faster; lower it if warming spikes your origin load too hard.
+purges faster; lower it if warming spikes your origin load too hard. This is a per-job
+limit: multiple workers can each make that many requests. Jobs process small batches rather
+than holding a worker for an entire URL list; see
+[queue scheduling](invalidation.md#requests-and-queue-scheduling).
 
 ### `autoInjectHydrationScript`
 `bool`, default `true`. Automatically register `edge-hydrate.js` on front-end GET pages,

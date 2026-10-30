@@ -13,6 +13,7 @@ is unsure, it purges more, not less.
 - [Everything is asynchronous](#everything-is-asynchronous)
 - [Purge jobs and retries](#purge-jobs-and-retries)
 - [Warming](#warming)
+- [Scheduled status changes](#scheduled-status-changes)
 - [Drafts, revisions, and previews](#drafts-revisions-and-previews)
 - [What Edge cannot detect](#what-edge-cannot-detect)
 
@@ -129,26 +130,64 @@ location) is not retried; it's raised clearly so you can fix the config. The
 
 ## Warming
 
-With `warmCacheAutomatically: true` (default), after a purge Edge queues a `WarmJob` that
-re-requests the purged URLs so the next real visitor gets a hit instead of paying for the
-re-render:
+With `warmCacheAutomatically: true` (default), Edge queues anonymous requests for purged
+URLs so visitors can use the rebuilt cache. With warming off, purges still happen; the
+next visitor renders each page and populates its cache. This reduces background origin
+load after bulk edits, at the cost of slower first visits.
 
-- Requests are sent **cookie-free and anonymous** (no cookie jar), so the render is a
-  clean anonymous shell and the origin stores the result.
-- They carry an `X-Edge-Warm: 1` header (so you can spot them in logs) and run
-  `concurrency` at a time (default 5).
-- Warm jobs run at lower priority and with a short delay, so purges land first.
-- A failed warm request is logged and skipped; worst case, that URL is a miss for the next
-  visitor, who re-primes it.
+### Requests and queue scheduling
 
-Turn warming off if you'd rather reduce origin load right after big bulk edits and let
-traffic re-populate the cache lazily.
+Warm requests are cookie-free, use no cookie jar, and do not follow redirects. They carry
+`X-Edge-Warm: 1` so you can identify them in access logs. The `concurrency` setting controls
+how many requests each job makes in parallel (default 5).
 
-You can also warm manually:
+Warming runs at priority **2048**, behind normal Craft jobs (1024); purges run at priority
+**100**. Lower numbers run first. Automatically queued warm jobs have a five-second delay
+to give purges time to complete.
+
+Each execution handles at most `min(10, 2 × concurrency)` URLs, keeping HTTP work to at most
+two waves of requests. Each request has a 60-second timeout and a 10-second connection
+timeout; the job has a 300-second execution allowance. Larger lists are split into
+separate jobs, so operational jobs can run between batches.
+
+### Overlapping changes
+
+Pending work lives in `edge_warm_requests`, separately from cached HTML and dependency
+records. Requests for the same exact site ID and URI share one pending record, including
+requests submitted by different jobs or CLI commands. Cache eviction does not erase this
+work list.
+
+A worker claims a URL before fetching it. Other workers leave an active claim alone;
+claims expire after 120 seconds so abandoned work can be reclaimed on retry. Coordination
+locks cover only brief database operations, never HTTP requests.
+
+If content changes while a URL is being fetched, Edge records another generation of work.
+When the older request finishes, Edge queues a fresh purge and warm for that URL. Completing
+the older generation cannot remove the newer one.
+
+### Results and recovery
+
+An HTTP **200** completes a warm request. Redirects, other HTTP statuses and transport
+failures are recorded as errors; the job finishes its other requests and is marked failed.
+Successful URLs are removed from the work list, so retrying a partially completed job
+processes only the remaining work. Unexpected execution failures allow up to three attempts;
+HTTP failures require an explicit retry after their cause is resolved.
+
+A successful fetch does not prove the edge stored the response: cacheability rules still
+apply. Use the [verification commands](cli-and-control-panel.md#verification) to confirm a
+cache HIT and cookie-free response. For failed jobs, see
+[Troubleshooting](troubleshooting.md#failed-or-delayed-warming-jobs).
+
+### Manual warming
+
+Both commands use the same work list, deduplication and batch limits as automatic warming:
 
 - `./craft edge/cache/warm`: re-warm every URL Edge currently has recorded.
 - `./craft edge/cache/generate`: request every **live element URL** (entries + categories,
-  all sites) to build the cache from scratch, e.g. right after a deploy or a full clear.
+  all sites) to build the cache from scratch, e.g. after a deploy or a full clear.
+
+Manual commands remain available when automatic warming is disabled. Re-running a command
+also requeues failed work for the URLs it includes.
 
 ## Drafts, revisions, and previews
 

@@ -307,6 +307,7 @@ If you want to read along in the source, here's the map:
 | Resolving changes -> purges, coarse flush | `src/services/Invalidator.php` |
 | Cookie-safety layer, cache headers | `src/drivers/BaseDriver.php` |
 | Per-tier storage/purge | `src/drivers/{NginxStatic,NginxFastCgi,Cloudflare}Driver.php` |
+| Pending warming, deduplication and worker claims | `src/services/Warmer.php` |
 | Queue jobs (purge with retry, warm) | `src/jobs/{PurgeJob,WarmJob}.php` |
 | CSRF / island endpoints | `src/controllers/DynamicController.php` |
 | Browser hydration runtime | `src/web/assets/hydrate/dist/edge-hydrate.js` |

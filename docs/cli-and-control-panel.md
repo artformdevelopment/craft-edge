@@ -30,7 +30,7 @@ externally-driven content.
 ```bash
 ./craft edge/cache/warm
 ```
-Queues a warm job for **every URL Edge currently has recorded**, re-requesting them
+Queues warming for **every URL Edge currently has recorded**, re-requesting them
 cookie-free so they're hits again. Nothing to warm if the cache is empty: run `generate`
 first to seed from content.
 
@@ -52,7 +52,8 @@ a no-op almost every time, so a per-minute cron is fine.
 
 > `warm`, `generate` and `refresh-expired` **queue** jobs; they don't do the work
 > synchronously. Make sure the queue runs (`./craft queue/run`, or a queue daemon)
-> afterwards.
+> afterwards. Warming uses a shared, deduplicated work list and bounded jobs; see
+> [Invalidation & warming](invalidation.md#warming) for scheduling and recovery.
 
 ### Verification
 

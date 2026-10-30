@@ -56,6 +56,8 @@ class Install extends Migration
         $this->addForeignKey(null, Table::CACHE_ELEMENTS, 'elementId', \craft\db\Table::ELEMENTS, 'id', 'CASCADE', 'CASCADE');
         $this->addForeignKey(null, Table::CACHE_TAGS, 'cacheId', Table::CACHES, 'id', 'CASCADE', 'CASCADE');
 
+        (new m261030_000000_warm_requests(['db' => $this->db]))->safeUp();
+
         return true;
     }
 
@@ -64,6 +66,7 @@ class Install extends Migration
      */
     public function safeDown(): bool
     {
+        $this->dropTableIfExists(Table::WARM_REQUESTS);
         $this->dropTableIfExists(Table::CACHE_TAGS);
         $this->dropTableIfExists(Table::CACHE_ELEMENTS);
         $this->dropTableIfExists(Table::CACHES);

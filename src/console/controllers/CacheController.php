@@ -7,7 +7,6 @@
 namespace artformdev\edge\console\controllers;
 
 use artformdev\edge\db\Table;
-use artformdev\edge\jobs\WarmJob;
 use artformdev\edge\models\SiteUri;
 use artformdev\edge\Plugin;
 use Craft;
@@ -16,7 +15,6 @@ use craft\db\Query;
 use craft\elements\Category;
 use craft\elements\Entry;
 use craft\helpers\Console;
-use craft\helpers\Queue as QueueHelper;
 use yii\console\ExitCode;
 
 /**
@@ -101,9 +99,9 @@ class CacheController extends Controller
             return ExitCode::OK;
         }
 
-        QueueHelper::push(new WarmJob(
-            siteUris: array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), $siteUris),
-        ));
+        Plugin::getInstance()->warmer->enqueue(
+            array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), $siteUris),
+        );
 
         $this->stdout('Queued a warm job for ' . count($siteUris) . " URLs. Run queue/run to process it.\n", Console::FG_GREEN);
 
@@ -146,9 +144,9 @@ class CacheController extends Controller
             return ExitCode::OK;
         }
 
-        QueueHelper::push(new WarmJob(
-            siteUris: array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), array_values($unique)),
-        ));
+        Plugin::getInstance()->warmer->enqueue(
+            array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), array_values($unique)),
+        );
 
         $this->stdout('Queued generation of ' . count($unique) . " URLs. Run queue/run to process it.\n", Console::FG_GREEN);
 

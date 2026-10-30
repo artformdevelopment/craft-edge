@@ -8,7 +8,6 @@ namespace artformdev\edge\services;
 
 use artformdev\edge\db\Table;
 use artformdev\edge\jobs\PurgeJob;
-use artformdev\edge\jobs\WarmJob;
 use artformdev\edge\models\Settings;
 use artformdev\edge\models\SiteUri;
 use artformdev\edge\Plugin;
@@ -427,9 +426,10 @@ class Invalidator extends Component
             return;
         }
 
-        QueueHelper::push(new WarmJob(
-            siteUris: array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), array_values($siteUris)),
-        ), priority: 200, delay: 5);
+        Plugin::getInstance()->warmer->enqueue(
+            array_map(fn(SiteUri $siteUri) => $siteUri->toArray(), array_values($siteUris)),
+            5,
+        );
     }
 
     /**

@@ -11,6 +11,7 @@ namespace artformdev\edge\db;
  */
 abstract class Table
 {
+    public const WARM_REQUESTS = '{{%edge_warm_requests}}';
     public const CACHES = '{{%edge_caches}}';
     public const CACHE_ELEMENTS = '{{%edge_cache_elements}}';
     public const CACHE_TAGS = '{{%edge_cache_tags}}';

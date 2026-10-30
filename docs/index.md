@@ -24,7 +24,7 @@ This page is the central map of everything. If it's your first time, follow the
 | 5 | **[Driver: Cloudflare](driver-cloudflare.md)** | Cloudflare caches at its global edge; Edge writes the cache rules and purges via API. |
 | 6 | **[Configuration reference](configuration.md)** | Every setting, what it does, when to change it, and the full decision order. |
 | 7 | **[Templating for the cache](templating.md)** | The anonymous shell, forms & CSRF, islands, and the patterns that quietly break caching. **The key page for developers.** |
-| 8 | **[Invalidation & warming](invalidation.md)** | How a save becomes the exact set of purges, coarse flushes, and how warming works. |
+| 8 | **[Invalidation & warming](invalidation.md)** | How a save becomes the exact set of purges, coarse flushes, warming batches, overlapping changes and recovery. |
 | 9 | **[CLI & control panel](cli-and-control-panel.md)** | Every console command and the **Utilities -> Edge Cache** panel. |
 | 10 | **[Troubleshooting](troubleshooting.md)** | Reading the response headers, and fixing the usual suspects. |
 
@@ -52,6 +52,8 @@ This page is the central map of everything. If it's your first time, follow the
   [Troubleshooting](troubleshooting.md#forms-are-rejected--csrf-errors).
 - **"It's not caching / it cached the wrong thing / it's stale."** ->
   [Troubleshooting](troubleshooting.md).
+- **"Warming jobs are failing or waiting."** ->
+  [Troubleshooting](troubleshooting.md#failed-or-delayed-warming-jobs).
 - **"When does content get purged?"** -> [Invalidation & warming](invalidation.md).
 - **"What can I run from the CLI?"** -> [CLI & control panel](cli-and-control-panel.md).
 - **"How do I keep secrets out of config?"** ->

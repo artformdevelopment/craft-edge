@@ -8,89 +8,106 @@ namespace artformdev\edge\jobs;
 
 use artformdev\edge\models\SiteUri;
 use artformdev\edge\Plugin;
+use artformdev\edge\services\Warmer;
 use Craft;
 use craft\queue\BaseJob;
 use GuzzleHttp\Pool;
 use GuzzleHttp\Psr7\Request;
+use Psr\Http\Message\ResponseInterface;
+use yii\queue\RetryableJobInterface;
 
-/**
- * Re-requests purged URLs through the edge so anonymous visitors get instant HITs again.
- * Requests are sent cookie-free (never with identity cookies), so the edge actually
- * stores the result.
- */
-class WarmJob extends BaseJob
+/** Executes bounded anonymous fetches; old URI payloads enter the shared work list. */
+class WarmJob extends BaseJob implements RetryableJobInterface
 {
-    /**
-     * @param array<int, array{siteId: int|string, uri: string}> $siteUris
-     */
-    public function __construct(
-        public array $siteUris = [],
-        array $config = [],
-    ) {
+    public array $requestIds = [];
+
+    public function __construct(public array $siteUris = [], array $config = [], array $requestIds = [])
+    {
+        $this->requestIds = $requestIds;
         parent::__construct($config);
     }
 
-    /**
-     * @inheritdoc
-     */
-    public function execute($queue): void
+    public function getTtr(): int
     {
-        $settings = Plugin::getInstance()->getSettings();
-
-        $urls = [];
-        foreach ($this->siteUris as $config) {
-            try {
-                $urls[] = SiteUri::fromArray($config)->getUrl();
-            } catch (\Throwable) {
-                // Site may have been deleted since the purge.
-            }
-        }
-
-        if (empty($urls)) {
-            return;
-        }
-
-        $client = Craft::createGuzzleClient([
-            'timeout' => 60,
-            'http_errors' => false,
-            'allow_redirects' => false,
-            // No cookie jar: warmer requests must be anonymous.
-            'cookies' => false,
-        ]);
-
-        $total = count($urls);
-        $done = 0;
-
-        $requests = static function() use ($urls) {
-            foreach ($urls as $url) {
-                yield new Request('GET', $url, [
-                    'Accept' => 'text/html',
-                    'X-Edge-Warm' => '1',
-                ]);
-            }
-        };
-
-        $pool = new Pool($client, $requests(), [
-            'concurrency' => max(1, $settings->concurrency),
-            'fulfilled' => function() use (&$done, $total, $queue) {
-                $done++;
-                $this->setProgress($queue, $done / $total);
-            },
-            'rejected' => function($reason, int $index) use (&$done, $total, $queue, $urls) {
-                $done++;
-                $this->setProgress($queue, $done / $total);
-                Craft::warning('Edge warm request failed for ' . ($urls[$index] ?? '?') . ': ' . $reason, __METHOD__);
-            },
-        ]);
-
-        $pool->promise()->wait();
+        return Warmer::TTR;
     }
 
-    /**
-     * @inheritdoc
-     */
+    public function canRetry(mixed $attempt, mixed $error): bool
+    {
+        return $attempt < 3 && !$error instanceof WarmRequestException;
+    }
+
+    public function execute($queue): void
+    {
+        $plugin = Plugin::getInstance();
+        $warmer = $plugin->warmer;
+        if ($this->siteUris !== []) {
+            $warmer->enqueue($this->siteUris, 5);
+            return;
+        }
+        $concurrency = max(1, $plugin->getSettings()->concurrency);
+        $ids = array_slice($this->requestIds, 0, Warmer::batchSize($concurrency));
+        $remaining = array_slice($this->requestIds, count($ids));
+        if ($remaining !== []) {
+            $warmer->dispatch($remaining);
+        }
+        /** @var array<int, array> $claims */
+        $claims = [];
+        $errors = [];
+        $done = 0;
+        $finish = function(int $id, ?string $error) use ($warmer, &$claims, &$errors, &$done, $ids, $queue): void {
+            $warmer->complete($claims[$id], $error);
+            unset($claims[$id]);
+            if ($error !== null) {
+                $errors[] = "request $id: $error";
+                Craft::warning("Edge warm request $id failed: $error", __METHOD__);
+            }
+            $this->setProgress($queue, ++$done / count($ids));
+        };
+        $requests = function() use ($ids, $warmer, &$claims, $finish): \Generator {
+            foreach ($ids as $id) {
+                $claim = $warmer->claim((int)$id);
+                if ($claim === null) {
+                    continue;
+                }
+                $claims[$id] = $claim;
+                try {
+                    $request = new Request('GET', SiteUri::fromArray($claim)->getUrl(), ['Accept' => 'text/html', 'X-Edge-Warm' => '1']);
+                } catch (\Throwable $e) {
+                    $finish((int)$id, $e->getMessage());
+                    continue;
+                }
+                yield $id => $request;
+            }
+        };
+        $client = Craft::createGuzzleClient([
+            'timeout' => 60, 'connect_timeout' => 10, 'http_errors' => false,
+            'allow_redirects' => false, 'cookies' => false,
+        ]);
+        try {
+            (new Pool($client, $requests(), [
+                'concurrency' => $concurrency,
+                'fulfilled' => function(ResponseInterface $response, int $id) use ($finish): void {
+                    $status = $response->getStatusCode();
+                    $response->getBody()->close();
+                    $finish($id, $status === 200 ? null : "HTTP $status");
+                },
+                'rejected' => function($reason, int $id) use ($finish): void {
+                    $finish($id, (string)$reason);
+                },
+            ]))->promise()->wait();
+        } finally {
+            foreach ($claims as $claim) {
+                $warmer->complete($claim, 'Warming execution interrupted; retry the job.');
+            }
+        }
+        if ($errors !== []) {
+            throw new WarmRequestException(implode('; ', $errors));
+        }
+    }
+
     protected function defaultDescription(): string
     {
-        return 'Warming ' . count($this->siteUris) . ' edge cache URLs';
+        return 'Warming ' . count($this->siteUris ?: $this->requestIds) . ' edge cache URLs';
     }
 }
